@@ -1,0 +1,58 @@
+﻿# .NET
+bin/
+obj/
+.vs/
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# Rider / JetBrains
+.idea/
+
+# VS Code
+.vscode/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# ASP.NET local secrets
+appsettings.Development.json
+appsettings.*.Development.json
+
+# Test results / coverage
+TestResults/
+coverage/
+coverage.xml
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+packages/
+
+# Docker local overrides
+docker-compose.override.yml
+
+# Uploads
+uploads/
+wwwroot/uploads/
+
+# Logs
+*.log
+logs/
+Logs/
+
+# OS
+.DS_Store
+Thumbs.db
