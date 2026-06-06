@@ -1,3 +1,5 @@
+using AIJobCoach.Api.Data;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Formatting.Compact;
 
@@ -19,6 +21,9 @@ try
             .Enrich.FromLogContext()
             .WriteTo.Console(new CompactJsonFormatter());
     });
+    
+    builder.Services.AddDbContext<AppDbContext>(options =>
+        options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
     var app = builder.Build();
 
