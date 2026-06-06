@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AIJobCoach.SharedKernel\AIJobCoach.SharedKernel.csproj" />
+    <ProjectReference Include="..\AIJobCoach.Api\AIJobCoach.Api.csproj" />
   </ItemGroup>
 
 </Project>
