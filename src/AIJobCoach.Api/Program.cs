@@ -1,4 +1,5 @@
 using AIJobCoach.Api.Data;
+using AIJobCoach.Api.Modules.Auth.Application;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Serilog.Formatting.Compact;
@@ -13,6 +14,13 @@ try
 
     var builder = WebApplication.CreateBuilder(args);
 
+    var jwtSecret = builder.Configuration["Jwt:Secret"];
+    
+    if (string.IsNullOrWhiteSpace(jwtSecret) || jwtSecret.Length < 32)
+    {
+        throw new InvalidOperationException("Jwt:Secret must be at least 32 characters.");
+    }
+
     builder.Host.UseSerilog((context, services, configuration) =>
     {
         configuration
@@ -25,6 +33,10 @@ try
     builder.Services.AddDbContext<AppDbContext>(options =>
         options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+    builder.Services.AddScoped<AuthService>();
+    builder.Services.AddScoped<JwtService>();
+    builder.Services.AddScoped<RegisterRequestValidator>();
+
     var app = builder.Build();
 
     app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
@@ -34,6 +46,7 @@ try
 catch (Exception ex)
 {
     Log.Fatal(ex, "AI Job Coach API terminated unexpectedly");
+    throw;
 }
 finally
 {

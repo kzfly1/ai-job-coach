@@ -1,6 +1,6 @@
 ﻿namespace AIJobCoach.Api.Modules.Auth.Domain;
 
-public class User
+public sealed class User
 {
     private User()
     {
@@ -13,6 +13,21 @@ public class User
         string fullName, 
         string? headline = null)
     {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            throw new ArgumentException("Email is required.", nameof(email));
+        }
+
+        if (string.IsNullOrWhiteSpace(passwordHash))
+        {
+            throw new ArgumentException("Password hash is required.", nameof(passwordHash));
+        }
+
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            throw new ArgumentException("Full name is required.", nameof(fullName));
+        }
+        
         Id = Guid.NewGuid();
         Email = email;
         PasswordHash = passwordHash;
