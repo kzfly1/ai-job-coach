@@ -113,7 +113,7 @@ public sealed class AuthServiceTests
         //Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Should().NotBeNull();
-        result.Error!.code.Should().Be("INVALID_CREDENTIALS");
+        result.Error!.Code.Should().Be("INVALID_CREDENTIALS");
         result.Error.Message.Should().Be("Invalid email or password.");
     }
 
@@ -142,7 +142,7 @@ public sealed class AuthServiceTests
         //Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Should().NotBeNull();
-        result.Error!.code.Should().Be("INVALID_CREDENTIALS");
+        result.Error!.Code.Should().Be("INVALID_CREDENTIALS");
         result.Error.Message.Should().Be("Invalid email or password.");
     }
 }

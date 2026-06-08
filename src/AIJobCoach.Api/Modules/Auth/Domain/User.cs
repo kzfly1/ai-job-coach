@@ -44,4 +44,16 @@ public sealed class User
     public string? Headline { get; private set; }
     public DateTimeOffset CreatedAt { get; private set; }
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    public void UpdateProfile(string fullName, string? headline)
+    {
+        if (string.IsNullOrWhiteSpace(fullName))
+        {
+            throw new ArgumentException("Full name is required.", nameof(fullName));
+        }
+
+        FullName = fullName.Trim();
+        Headline = string.IsNullOrWhiteSpace(headline) ? null : headline.Trim();
+        UpdatedAt = DateTimeOffset.UtcNow;
+    }
 }
