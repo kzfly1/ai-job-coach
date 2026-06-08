@@ -1,0 +1,60 @@
+﻿@baseUrl = http://localhost:5001
+@token = paste-token-here
+
+### Health
+GET {{baseUrl}}/health
+
+### Register
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Shawn Qi",
+  "email": "shawn@test.com",
+  "password": "Password123!"
+}
+
+### Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "shawn@test.com",
+  "password": "Password123!"
+}
+
+### Get Me
+GET {{baseUrl}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### Update Me
+PUT {{baseUrl}}/api/auth/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fullName": "Shawn Qi Updated",
+  "headline": "Junior Full-stack Developer"
+}
+
+### Invalid Register
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "fullName": "",
+  "email": "bad-email",
+  "password": "123"
+}
+
+### Wrong Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "shawn@test.com",
+  "password": "wrong-password"
+}
+
+### Get Me Without Token
+GET {{baseUrl}}/api/auth/me

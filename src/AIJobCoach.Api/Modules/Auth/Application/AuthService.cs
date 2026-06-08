@@ -77,9 +77,57 @@ public sealed class AuthService
         return Result<AuthResponse>.Success(new AuthResponse(token));
     }
 
+    public async Task<Result<UserProfileDto>> GetProfileAsync(
+        Guid userId,
+        CancellationToken ct = default)
+    {
+        var user = await _dbContext.Users
+            .AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId, ct);
+
+        if (user is null)
+        {
+            return Result<UserProfileDto>.Failure(
+                new Error("USER_NOT_FOUND", "User not found,"));
+        }
+
+        return Result<UserProfileDto>.Success(ToProfileDto(user));
+    }
+
+    public async Task<Result<UserProfileDto>> UpdateProfileAsync(
+        Guid userId,
+        UpdateProfileRequest request,
+        CancellationToken ct = default)
+    {
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Id == userId, ct);
+
+        if (user is null)
+        {
+            return Result<UserProfileDto>.Failure(
+                new Error("USER_NOT_FOUND", "User not found,"));
+        }
+        
+        user.UpdateProfile(request.FullName, request.Headline);
+        
+        await _dbContext.SaveChangesAsync(ct);
+        
+        return Result<UserProfileDto>.Success(ToProfileDto(user));
+    }
+
     private static Result<AuthResponse> InvalidCredentials()
     {
         return Result<AuthResponse>.Failure(
             new Error("INVALID_CREDENTIALS", "Invalid email or password."));
+    }
+
+    private static UserProfileDto ToProfileDto(User user)
+    {
+        return new UserProfileDto(
+            user.Id,
+            user.Email,
+            user.FullName,
+            user.Headline,
+            user.CreatedAt);
     }
 }
