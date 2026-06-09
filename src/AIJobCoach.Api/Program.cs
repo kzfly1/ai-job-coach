@@ -1,13 +1,15 @@
+using System.Text;
 using AIJobCoach.Api.Data;
 using AIJobCoach.Api.Middleware;
 using AIJobCoach.Api.Modules.Auth.Application;
+using AIJobCoach.Api.Modules.Resumes.Application;
+using AIJobCoach.Api.Modules.Resumes.Infrastructure;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Serilog.Formatting.Compact;
-using System.Text;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console(new CompactJsonFormatter())
@@ -71,6 +73,7 @@ try
     builder.Services.AddScoped<AuthService>();
     builder.Services.AddScoped<JwtService>();
     builder.Services.AddScoped<RegisterRequestValidator>();
+    builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 
     builder.Services.AddControllers();
     builder.Services.Configure<ApiBehaviorOptions>(options =>
