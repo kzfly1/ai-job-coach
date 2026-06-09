@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace AIJobCoach.Api.Modules.Resumes.Infrastructure;
 
-public class ResumeConfiguration : IEntityTypeConfiguration<Resume>
+public sealed class ResumeConfiguration : IEntityTypeConfiguration<Resume>
 {
     public void Configure(EntityTypeBuilder<Resume> builder)
     {
