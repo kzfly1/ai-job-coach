@@ -74,6 +74,7 @@ try
     builder.Services.AddScoped<JwtService>();
     builder.Services.AddScoped<RegisterRequestValidator>();
     builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+    builder.Services.AddScoped<ResumeService>();
 
     builder.Services.AddControllers();
     builder.Services.Configure<ApiBehaviorOptions>(options =>
