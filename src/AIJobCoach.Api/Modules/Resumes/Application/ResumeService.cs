@@ -108,6 +108,36 @@ public sealed class ResumeService
             .ToListAsync(ct);
     }
 
+    public async Task<Result<bool>> SoftDeleteAsync(
+        Guid resumeId,
+        Guid userId,
+        CancellationToken ct = default)
+    {
+        if (resumeId == Guid.Empty)
+        {
+            throw new ArgumentException("Resume id is required.", nameof(resumeId));
+        }
+
+        if (userId == Guid.Empty)
+        {
+            throw new ArgumentException("User id is required.", nameof(userId));
+        }
+        
+        var resume = await _dbContext.Resumes
+            .FirstOrDefaultAsync(r => r.Id == resumeId && r.UserId == userId && r.IsActive, ct);
+
+        if (resume is null)
+        {
+            return Result<bool>.Failure(
+                new Error("RESUME_NOT_FOUND", "Resume not found."));
+        }
+
+        resume.Deactivate();
+        
+        await _dbContext.SaveChangesAsync(ct);
+        return Result<bool>.Success(true);
+    }
+
     private static ResumeDto ToDto(Resume resume)
     {
         return new ResumeDto(

@@ -174,9 +174,84 @@ public sealed class ResumeServiceTests
         result.Should().OnlyContain(r => r.UserId == userId);
     }
 
+    [Fact]
+    public async Task SoftDeleteAsync_ShouldDeactivateResume_AndNotCallDelete_WhenOwnedAndActive()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var storage = new FakeFileStorageService();
+        var service = new ResumeService(dbContext, storage);
+
+        var userId = Guid.NewGuid();
+        var resume = new Resume(userId, "resume.pdf", "path/resume.pdf", contentText: null);
+        dbContext.Resumes.Add(resume);
+        await dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await service.SoftDeleteAsync(resume.Id, userId);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeTrue();
+        storage.DeleteCallCount.Should().Be(0);
+
+        var persisted = await dbContext.Resumes.SingleAsync();
+        persisted.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SoftDeleteAsync_ShouldReturnResumeNotFound_AndKeepActive_WhenOwnedByAnotherUser()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var storage = new FakeFileStorageService();
+        var service = new ResumeService(dbContext, storage);
+
+        var ownerId = Guid.NewGuid();
+        var resume = new Resume(ownerId, "resume.pdf", "path/resume.pdf", contentText: null);
+        dbContext.Resumes.Add(resume);
+        await dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await service.SoftDeleteAsync(resume.Id, Guid.NewGuid());
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error!.Code.Should().Be("RESUME_NOT_FOUND");
+        storage.DeleteCallCount.Should().Be(0);
+
+        var persisted = await dbContext.Resumes.SingleAsync();
+        persisted.IsActive.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task SoftDeleteAsync_ShouldReturnResumeNotFound_WhenResumeIsInactive()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var storage = new FakeFileStorageService();
+        var service = new ResumeService(dbContext, storage);
+
+        var userId = Guid.NewGuid();
+        var resume = new Resume(userId, "resume.pdf", "path/resume.pdf", contentText: null);
+        resume.Deactivate();
+        dbContext.Resumes.Add(resume);
+        await dbContext.SaveChangesAsync();
+
+        // Act
+        var result = await service.SoftDeleteAsync(resume.Id, userId);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error!.Code.Should().Be("RESUME_NOT_FOUND");
+        storage.DeleteCallCount.Should().Be(0);
+    }
+
     private sealed class FakeFileStorageService : IFileStorageService
     {
         public int SaveCallCount { get; private set; }
+
+        public int DeleteCallCount { get; private set; }
 
         public string ReturnedStoragePath { get; } = $"{Guid.NewGuid()}/stored-file.pdf";
 
@@ -193,6 +268,7 @@ public sealed class ResumeServiceTests
 
         public Task DeleteAsync(string storagePath, CancellationToken ct = default)
         {
+            DeleteCallCount++;
             return Task.CompletedTask;
         }
     }
