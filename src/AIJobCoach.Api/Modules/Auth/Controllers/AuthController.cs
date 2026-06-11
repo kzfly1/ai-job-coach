@@ -1,4 +1,5 @@
-﻿using System.Security.Claims;
+﻿using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using AIJobCoach.Api.Common.Http;
 using AIJobCoach.Api.Modules.Auth.Application;
 using Microsoft.AspNetCore.Authorization;
@@ -26,9 +27,12 @@ public sealed class AuthController(
 
         var result = await authService.RegisterAsync(request, ct);
 
-        return this.ToActionResult(
-            result,
-            value => Created("/api/auth/me", value));
+        if (!result.IsSuccess)
+        {
+            return this.ToErrorActionResult(result.Error);
+        }
+
+        return Created("/api/auth/me", result.Value);
     }
 
     [HttpPost("login")]
@@ -38,9 +42,12 @@ public sealed class AuthController(
     {
         var result = await authService.LoginAsync(request, ct);
 
-        return this.ToActionResult(
-            result,
-            value => Ok(value));
+        if (!result.IsSuccess)
+        {
+            return this.ToErrorActionResult(result.Error);
+        }
+
+        return Ok(result.Value);
     }
 
     [Authorize]
@@ -51,12 +58,15 @@ public sealed class AuthController(
         {
             return Unauthorized();
         }
-        
+
         var result = await authService.GetProfileAsync(userId, ct);
 
-        return this.ToActionResult(
-            result,
-            value => Ok(value));
+        if (!result.IsSuccess)
+        {
+            return this.ToErrorActionResult(result.Error);
+        }
+
+        return Ok(result.Value);
     }
 
     [Authorize]
@@ -66,20 +76,26 @@ public sealed class AuthController(
         CancellationToken ct)
     {
         if (!TryGetUserId(out var userId))
+        {
             return Unauthorized();
-        
+        }
+
         var result = await authService.UpdateProfileAsync(userId, request, ct);
 
-        return this.ToActionResult(
-            result,
-            value => Ok(value));
+        if (!result.IsSuccess)
+        {
+            return this.ToErrorActionResult(result.Error);
+        }
+
+        return Ok(result.Value);
     }
 
     private bool TryGetUserId(out Guid userId)
     {
-        var sub = User.FindFirstValue("sub")
-            ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
-        
-        return Guid.TryParse(sub, out userId);
+        var userIdValue =
+            User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+
+        return Guid.TryParse(userIdValue, out userId);
     }
 }
