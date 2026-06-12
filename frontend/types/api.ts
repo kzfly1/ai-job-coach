@@ -7,7 +7,7 @@
 };
 
 export type AuthResponseDto = {
-    token: string;
+    user: UserProfileDto;
 };
 
 export type ResumeDto = {
