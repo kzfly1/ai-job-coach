@@ -1,11 +1,8 @@
-﻿import {getAccessToken} from "@/lib/auth";
-import type { ApiClientError, ApiErrorResponse} from "@/types/api";
+﻿import type {ApiClientError, ApiErrorResponse} from "@/types/api";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:7001";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:5001";
 
-type ApiClientOptions = RequestInit & {
-    auth?: boolean;
-};
+type ApiClientOptions = RequestInit;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value != null;
@@ -14,7 +11,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function parseErrorResponse(response: Response): Promise<ApiClientError> {
     const body: unknown = await response.json().catch(() => null);
 
-    if (isRecord(body)){
+    if (isRecord(body)) {
         const errorResponse: ApiErrorResponse = {
             code: typeof body.code === "string" ? body.code : "API_ERROR",
             message: typeof body.message === "string" ? body.message : "API request failed.",
@@ -34,21 +31,20 @@ async function parseErrorResponse(response: Response): Promise<ApiClientError> {
     };
 }
 
-export async function apiClient<TResponse> (
+export async function apiClient<TResponse>(
     path: string,
     options: ApiClientOptions = {}
 ): Promise<TResponse> {
-    const {auth = true, headers, body, ...rest} = options;
+    const {headers, body, ...rest} = options;
 
-    const token = getAccessToken();
     const isFormData = body instanceof FormData;
 
     const response = await fetch(`${API_BASE_URL}${path}`, {
         ...rest,
         body,
-        headers:{
+        credentials: "include",
+        headers: {
             ...(!isFormData ? {"Content-Type": "application/json"} : {}),
-            ...(auth && token ? {Authorization: `Bearer ${token}`} : {}),
             ...headers,
         },
     });

@@ -28,7 +28,7 @@ public sealed class AuthServiceTests
                 ["Jwt:Audience"] = "AIJobCoach.Tests",
             })
             .Build();
-        
+
         return new JwtService(configuration);
     }
 
@@ -38,28 +38,32 @@ public sealed class AuthServiceTests
     }
 
     [Fact]
-    public async Task RegisterAsync_ShouldSaveHashedPassword_WhenRequestIsValid()
+    public async Task RegisterAsync_ShouldSaveHashedPasswordAndReturnTokenAndUser_WhenRequestIsValid()
     {
-        //Arrange
+        // Arrange
         await using var dbContext = CreateDbContext();
-        var service  = CreateAuthService(dbContext);
+        var service = CreateAuthService(dbContext);
 
         var request = new RegisterRequest(
             Email: "test@example.com",
             Password: "Password123",
             FullName: "Test User",
             Headline: "Junior Developer");
-        
-        //Act 
-        var result = await service.RegisterAsync(request);
-        
-        //Assert
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().NotBeNull();
 
-        var value = result.Value!;
-        
+        // Act
+        var result = await service.RegisterAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+
+        var value = result.Value
+            ?? throw new InvalidOperationException("Expected successful auth result.");
+
         value.Token.Should().NotBeNullOrWhiteSpace();
+        value.User.Id.Should().NotBeEmpty();
+        value.User.Email.Should().Be("test@example.com");
+        value.User.FullName.Should().Be("Test User");
+        value.User.Headline.Should().Be("Junior Developer");
 
         var user = await dbContext.Users.SingleAsync();
 
@@ -69,9 +73,9 @@ public sealed class AuthServiceTests
     }
 
     [Fact]
-    public async Task LoginAsync_ShouldReturnToken_WhenCredentialsAreValid()
+    public async Task LoginAsync_ShouldReturnTokenAndUser_WhenCredentialsAreValid()
     {
-        //Arrange
+        // Arrange
         await using var dbContext = CreateDbContext();
         var service = CreateAuthService(dbContext);
 
@@ -86,41 +90,51 @@ public sealed class AuthServiceTests
         var request = new LoginRequest(
             Email: "test@example.com",
             Password: "Password123");
-        
-        //Act
+
+        // Act
         var result = await service.LoginAsync(request);
-        
-        //Assert
+
+        // Assert
         result.IsSuccess.Should().BeTrue();
-        result.Value.Should().NotBeNull();
-        result.Value!.Token.Should().NotBeNullOrWhiteSpace();
+
+        var value = result.Value
+            ?? throw new InvalidOperationException("Expected successful auth result.");
+
+        value.Token.Should().NotBeNullOrWhiteSpace();
+        value.User.Id.Should().Be(user.Id);
+        value.User.Email.Should().Be("test@example.com");
+        value.User.FullName.Should().Be("Test User");
+        value.User.Headline.Should().BeNull();
     }
 
     [Fact]
-    public async Task LoginAsync_ShouldReturnInvalidCredentials_WhenEmailDoesNotExit()
+    public async Task LoginAsync_ShouldReturnInvalidCredentials_WhenEmailDoesNotExist()
     {
-        //Arrange
+        // Arrange
         await using var dbContext = CreateDbContext();
         var service = CreateAuthService(dbContext);
-        
+
         var request = new LoginRequest(
             Email: "missing@example.com",
             Password: "Password123");
-        
-        //Act
+
+        // Act
         var result = await service.LoginAsync(request);
-        
-        //Assert
+
+        // Assert
         result.IsFailure.Should().BeTrue();
-        result.Error.Should().NotBeNull();
-        result.Error!.Code.Should().Be("INVALID_CREDENTIALS");
-        result.Error.Message.Should().Be("Invalid email or password.");
+
+        var error = result.Error
+            ?? throw new InvalidOperationException("Expected error result.");
+
+        error.Code.Should().Be("INVALID_CREDENTIALS");
+        error.Message.Should().Be("Invalid email or password.");
     }
 
     [Fact]
     public async Task LoginAsync_ShouldReturnInvalidCredentials_WhenPasswordIsWrong()
     {
-        //Arrange
+        // Arrange
         await using var dbContext = CreateDbContext();
         var service = CreateAuthService(dbContext);
 
@@ -128,21 +142,24 @@ public sealed class AuthServiceTests
             email: "test@example.com",
             passwordHash: BCrypt.Net.BCrypt.HashPassword("Password123", workFactor: 12),
             fullName: "Test User");
-        
+
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
         var request = new LoginRequest(
             Email: "test@example.com",
             Password: "WrongPassword");
-        
-        //Act
+
+        // Act
         var result = await service.LoginAsync(request);
-        
-        //Assert
+
+        // Assert
         result.IsFailure.Should().BeTrue();
-        result.Error.Should().NotBeNull();
-        result.Error!.Code.Should().Be("INVALID_CREDENTIALS");
-        result.Error.Message.Should().Be("Invalid email or password.");
+
+        var error = result.Error
+            ?? throw new InvalidOperationException("Expected error result.");
+
+        error.Code.Should().Be("INVALID_CREDENTIALS");
+        error.Message.Should().Be("Invalid email or password.");
     }
 }

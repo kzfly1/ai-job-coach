@@ -12,8 +12,12 @@ public sealed record LoginRequest(
     string Password
 );
 
+public sealed record AuthResult(
+    string Token,
+    UserProfileDto User);
+
 public sealed record AuthResponse(
-    string Token
+    UserProfileDto User
 );
 
 public sealed record UserProfileDto(

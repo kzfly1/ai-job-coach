@@ -66,9 +66,37 @@ try
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
             };
+
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
+                {
+                    if (context.Request.Cookies.TryGetValue("access_token", out var token))
+                    {
+                        context.Token = token;
+                    }
+
+                    return Task.CompletedTask;
+                }
+            };
         });
 
     builder.Services.AddAuthorization();
+
+    if (builder.Environment.IsDevelopment())
+    {
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("Frontend", policy =>
+            {
+                policy
+                    .WithOrigins("http://localhost:3000")
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()
+                    .AllowCredentials();
+            });
+        });
+    }
 
     builder.Services.AddScoped<AuthService>();
     builder.Services.AddScoped<JwtService>();
@@ -88,6 +116,11 @@ try
     var app = builder.Build();
 
     app.UseExceptionHandler();
+
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseCors("Frontend");
+    }
     
     app.UseAuthentication();
     app.UseAuthorization();
