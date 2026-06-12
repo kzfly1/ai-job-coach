@@ -1,4 +1,6 @@
-﻿namespace AIJobCoach.SharedKernel;
+﻿using System.Diagnostics.CodeAnalysis;
+
+namespace AIJobCoach.SharedKernel;
 
 public sealed class Result<T>
 {
@@ -9,8 +11,12 @@ public sealed class Result<T>
         Error = error;
     }
     
+    [MemberNotNullWhen(true, nameof(Value))]
+    [MemberNotNullWhen(false, nameof(Error))]
     public bool IsSuccess { get; }
 
+    [MemberNotNullWhen(true, nameof(Error))]
+    [MemberNotNullWhen(false, nameof(Value))]
     public bool IsFailure => !IsSuccess;
     
     public T? Value { get; }

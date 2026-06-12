@@ -18,7 +18,7 @@ public sealed class AuthService
         _jwtService = jwtService;
     }
 
-    public async Task<Result<AuthResponse>> RegisterAsync(
+    public async Task<Result<AuthResult>> RegisterAsync(
         RegisterRequest request,
         CancellationToken ct = default)
     {
@@ -28,7 +28,7 @@ public sealed class AuthService
 
         if (exists)
         {
-            return Result<AuthResponse>.Failure(
+            return Result<AuthResult>.Failure(
                 new Error("EMAIL_ALREADY_EXISTS", "An account with this email already exists."));
         }
         
@@ -47,10 +47,10 @@ public sealed class AuthService
 
         var token = _jwtService.GenerateToken(user);
 
-        return Result<AuthResponse>.Success(new AuthResponse(token));
+        return Result<AuthResult>.Success(new AuthResult(token, ToProfileDto(user)));
     }
 
-    public async Task<Result<AuthResponse>> LoginAsync(
+    public async Task<Result<AuthResult>> LoginAsync(
         LoginRequest request,
         CancellationToken ct = default)
     {
@@ -74,7 +74,7 @@ public sealed class AuthService
 
         var token = _jwtService.GenerateToken(user);
         
-        return Result<AuthResponse>.Success(new AuthResponse(token));
+        return Result<AuthResult>.Success(new AuthResult(token, ToProfileDto(user)));
     }
 
     public async Task<Result<UserProfileDto>> GetProfileAsync(
@@ -115,9 +115,9 @@ public sealed class AuthService
         return Result<UserProfileDto>.Success(ToProfileDto(user));
     }
 
-    private static Result<AuthResponse> InvalidCredentials()
+    private static Result<AuthResult> InvalidCredentials()
     {
-        return Result<AuthResponse>.Failure(
+        return Result<AuthResult>.Failure(
             new Error("INVALID_CREDENTIALS", "Invalid email or password."));
     }
 

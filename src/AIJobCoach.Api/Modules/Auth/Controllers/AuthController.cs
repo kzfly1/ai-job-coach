@@ -32,7 +32,9 @@ public sealed class AuthController(
             return this.ToErrorActionResult(result.Error);
         }
 
-        return Created("/api/auth/me", result.Value);
+        SetAuthCookie(result.Value.Token);
+
+        return Created("/api/auth/me", new AuthResponse(result.Value.User));
     }
 
     [HttpPost("login")]
@@ -47,7 +49,24 @@ public sealed class AuthController(
             return this.ToErrorActionResult(result.Error);
         }
 
-        return Ok(result.Value);
+        SetAuthCookie(result.Value.Token);
+        return Ok(new AuthResponse(result.Value.User));
+    }
+
+    [Authorize]
+    [HttpPost("logout")]
+    public IActionResult Logout()
+    {
+        Response.Cookies.Delete(
+            "access_token",
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = false,
+                SameSite = SameSiteMode.Lax,
+                Path = "/"
+            });
+        return NoContent();
     }
 
     [Authorize]
@@ -88,6 +107,21 @@ public sealed class AuthController(
         }
 
         return Ok(result.Value);
+    }
+
+    private void SetAuthCookie(string token)
+    {
+        Response.Cookies.Append(
+            "access_token",
+            token,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = false,
+                SameSite = SameSiteMode.Lax,
+                Expires = DateTimeOffset.UtcNow.AddHours(1),
+                Path = "/",
+            });
     }
 
     private bool TryGetUserId(out Guid userId)
