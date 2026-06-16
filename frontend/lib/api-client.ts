@@ -39,7 +39,7 @@ export async function apiClient<TResponse>(
 
     const isFormData = body instanceof FormData;
 
-    const response = await fetch(`${API_BASE_URL}${path}`, {
+    const response = await fetch(buildApiUrl(path), {
         ...rest,
         body,
         credentials: "include",
@@ -58,4 +58,9 @@ export async function apiClient<TResponse>(
     }
 
     return (await response.json()) as TResponse;
+}
+
+export function buildApiUrl(path: string): string {
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return `${API_BASE_URL}${normalizedPath}`;
 }
