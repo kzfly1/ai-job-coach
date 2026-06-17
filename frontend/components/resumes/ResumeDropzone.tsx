@@ -1,19 +1,12 @@
-"use client";
+import {type ChangeEventHandler, type DragEventHandler, useRef, useState,} from "react";
 
-import {
-    type ChangeEventHandler,
-    type DragEventHandler,
-    useRef,
-    useState,
-} from "react";
-
-import { Button } from "@/components/ui/button";
+import {Button} from "@/components/ui/button";
 
 type ResumeDropzoneProps = {
     onFileSelected: (file: File) => void;
 };
 
-export function ResumeDropzone({ onFileSelected }: ResumeDropzoneProps) {
+export function ResumeDropzone({onFileSelected}: ResumeDropzoneProps) {
     const inputRef = useRef<HTMLInputElement | null>(null);
     const [isDragging, setIsDragging] = useState(false);
 

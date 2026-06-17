@@ -1,6 +1,6 @@
 "use client";
 
-import {type FormEventHandler, useState} from "react";
+import {type ComponentProps, useState} from "react";
 
 import {ResumeDropzone} from "@/components/resumes/ResumeDropzone";
 import {ResumeUploadProgress} from "@/components/resumes/ResumeUploadProgress";
@@ -12,6 +12,8 @@ import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
 import {useUploadResume} from "@/lib/hooks/use-resumes";
 import {validateResumeFile} from "@/lib/validations/resume-file";
 import type {ApiClientError, ResumeDto} from "@/types/api";
+
+type FormSubmitHandler = NonNullable<ComponentProps<"form">>["onSubmit"];
 
 function getApiErrorMessage(error: unknown): string {
     const apiError = error as Partial<ApiClientError>;
@@ -52,7 +54,7 @@ export function ResumeUploadForm() {
         setSelectedFile(file);
     }
 
-    const handleSubmit: FormEventHandler<HTMLFormElement> = (event) => {
+    const handleSubmit: FormSubmitHandler = (event) => {
         event.preventDefault();
 
         if (!selectedFile) {
