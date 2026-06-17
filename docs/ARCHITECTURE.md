@@ -213,7 +213,20 @@ public class AuthController(AuthService authService) : ControllerBase
             return UnprocessableEntity(validation.ToValidationErrorResponse());
 
         var result = await authService.RegisterAsync(request.Email, request.FullName, request.Password);
-        return this.ToActionResult(result, token => Created(string.Empty, new { token }));
+        // On success: set HttpOnly cookie, return { user: UserProfileDto }
+        if (result.IsSuccess)
+        {
+            Response.Cookies.Append("access_token", result.Value!.Token, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = !Environment.IsDevelopment(),
+                SameSite = SameSiteMode.Lax,
+                Expires = DateTimeOffset.UtcNow.AddHours(24),
+                Path = "/"
+            });
+            return Created(string.Empty, new { user = result.Value.Profile });
+        }
+        return this.ToActionResult(result, _ => Ok());
     }
 
     [HttpGet("me")]
@@ -433,7 +446,7 @@ app/
     └── applications/
 ```
 
-The `(dashboard)/layout.tsx` handles authentication redirect. On mount it checks for a token via `useAuth()` and calls `router.replace('/login')` if none is present. This is client-side only — no Next.js middleware is used for auth in Sprint 1.
+The `(dashboard)/layout.tsx` handles authentication redirect. It reads `user` and `isLoading` from `useAuth()`. While `isLoading` is true it renders a skeleton to prevent flash of protected content. When `isLoading` is false and `user` is null it calls `router.replace('/login')`. This is client-side only — no Next.js middleware is used for auth in Sprint 1.
 
 ### API Client
 
@@ -442,12 +455,11 @@ All HTTP calls go through `lib/api-client.ts`. No component ever calls `fetch()`
 ```typescript
 // lib/api-client.ts
 export async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = getToken();
   const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
     ...options,
+    credentials: 'include',       // sends the HttpOnly access_token cookie automatically
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });
@@ -463,11 +475,15 @@ export async function apiClient<T>(path: string, options?: RequestInit): Promise
 
 `ApiError` is typed as `{ code: string; message: string; status: number }`. Components catch errors from `useMutation` and display them via toast.
 
+`lib/auth.ts` (with `getToken`, `setToken`, `clearToken`) is not used — the JWT is never accessible to JavaScript. Auth state is managed entirely through `useAuth()` and the server cookie.
+
 ### Auth State
 
-JWT is stored in `localStorage` under the key `auth_token`. This is accepted technical debt — it will be moved to an httpOnly cookie after the MVP. `lib/auth.ts` exports `getToken()`, `setToken()`, and `clearToken()`.
+The JWT is stored in an `HttpOnly` cookie named `access_token`, set by the backend on login and register. JavaScript cannot read this cookie — the frontend never has access to the raw token.
 
-`useAuth()` is backed by TanStack Query (`queryKey: ['auth']`). It decodes the JWT payload using `atob()` — no external JWT library. After login or register, `setToken()` is called and `queryClient.invalidateQueries({ queryKey: ['auth'] })` updates the auth state across all components.
+`useAuth()` is backed by TanStack Query (`queryKey: ['auth', 'me']`). On mount it calls `GET /api/auth/me` to hydrate the current user. The hook returns `{ user: UserProfileDto | null, isLoading: boolean, logout: () => Promise<void> }`. Logout calls `POST /api/auth/logout`, which clears the cookie server-side, then removes the query from the cache and redirects to `/login`.
+
+`lib/auth-api.ts` contains `login()`, `register()`, `getCurrentUser()`, and `logout()` — the four functions that call the auth endpoints. `useAuth()` in `lib/hooks/use-auth.ts` wraps `getCurrentUser()` with TanStack Query.
 
 ### Server State with TanStack Query
 
@@ -534,7 +550,7 @@ Each module's endpoints are covered by integration tests using `WebApplicationFa
 
 Cover per endpoint:
 - Happy path (correct status code and response shape)
-- Auth failure (missing or invalid JWT → 401)
+- Auth failure (missing or invalid cookie → 401)
 - Validation failure (invalid input → 422)
 - Not found (wrong id or wrong user → 404)
 
@@ -630,5 +646,5 @@ The system prompt instruction to return JSON only must appear in every prompt. T
 
 ---
 
-*Last updated: Sprint 1 — initial architecture document.*
+*Last updated: Sprint 1 — auth updated from localStorage JWT to HttpOnly cookie; apiClient updated to use credentials: include; useAuth updated to hydrate from GET /api/auth/me.*
 *Update this document when a new module is added, a layer responsibility changes, or an architectural decision is revised.*
