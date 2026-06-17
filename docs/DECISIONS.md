@@ -148,15 +148,39 @@ Each record uses five fields:
 
 ### ADR-010: Store JWT in `localStorage` for MVP Frontend Auth
 
-**Status:** Accepted (technical debt acknowledged)
+**Status:** Superseded by ADR-021
 
 **Context:** The two options for client-side JWT storage are `localStorage` and `httpOnly` cookies. `httpOnly` cookies are inaccessible to JavaScript and therefore immune to XSS theft. `localStorage` is accessible to any JavaScript running on the page and is vulnerable to XSS attacks that steal the token.
 
-**Decision:** Store the JWT in `localStorage` for the MVP. This is explicitly logged as technical debt.
+**Decision:** ~~Store the JWT in `localStorage` for the MVP.~~ This decision was reversed during Sprint 1. See ADR-021.
 
-**Consequences:** Simpler frontend implementation — no server-side cookie management, no CSRF token handling, and no coordination between the Next.js App Router and the API on cookie configuration. The security trade-off is real: an XSS vulnerability in the frontend could expose the token. This is acceptable for an MVP with no real user data and no production traffic. Moving to `httpOnly` cookies before a public launch is a documented obligation.
+**Consequences:** The original decision was made for implementation simplicity. It was reversed once it became clear that HttpOnly cookie auth could be implemented within Sprint 1 scope without significant added complexity, and that doing so removed a known security debt before any users touched the product.
 
-**Revisit When:** The application is opened to real users, particularly before any feature that handles personal or sensitive data beyond what is currently stored.
+**Revisit When:** N/A — superseded.
+
+---
+
+### ADR-021: Use HttpOnly Cookie Authentication
+
+**Status:** Accepted
+
+**Context:** The original plan stored the JWT in `localStorage` and injected it as an `Authorization: Bearer` header. This approach is straightforward but exposes the token to XSS: any JavaScript running on the page can read `localStorage`. The alternative — an `HttpOnly` cookie — is invisible to JavaScript entirely. The cookie is set and cleared by the server, and the browser sends it automatically with every credentialed request.
+
+**Decision:** The backend sets the JWT in an `HttpOnly` cookie named `access_token` on successful login and register. The frontend never reads, stores, or decodes the token. `apiClient` uses `credentials: 'include'` on every request. `GET /api/auth/me` is the sole source of truth for the current user — `useAuth()` calls it via TanStack Query (`queryKey: ['auth', 'me']`) to hydrate user state. Logout calls `POST /api/auth/logout`, which clears the cookie server-side.
+
+**Consequences:** The JWT is never accessible to JavaScript, eliminating the XSS token-theft vector. The frontend is simpler — no token storage, no manual header injection, no JWT decoding. Auth state is always server-authoritative via `/api/auth/me`. The trade-offs are: (1) cookie auth introduces CSRF considerations — mitigated by `SameSite=Lax` for the MVP, with full CSRF hardening deferred to a pre-launch security ticket; (2) local development requires consistent protocol use (HTTP on both frontend and backend, or HTTPS on both) to avoid browser cookie/CORS issues from mixed schemes; (3) Bearer token support via the `Authorization` header may remain available for Postman and development tooling, but the frontend must not use it.
+
+**Cookie configuration:**
+- Name: `access_token`
+- `HttpOnly: true`
+- `Secure: true` in non-Development; `false` in Development
+- `SameSite: Lax`
+- `Path: /`
+- Expiry matches JWT expiry (24 hours)
+
+**Deferred:** Refresh tokens (post-MVP). Full CSRF token implementation (pre-launch security hardening ticket). `SameSite=Lax` is acceptable for the current MVP setup.
+
+**Revisit When:** Full CSRF protection is needed before public launch. Refresh tokens are needed for longer session lifetimes.
 
 ---
 
@@ -307,17 +331,18 @@ The following conditions should prompt a review of one or more decisions above:
 | Trigger | Relevant ADRs |
 |---|---|
 | A second developer joins the project | ADR-002, ADR-006, ADR-019 |
-| The application is opened to real users | ADR-010, ADR-019 |
+| The application is opened to real users | ADR-019, ADR-021 |
 | A module needs to scale independently | ADR-001 |
 | Cross-module coupling becomes measurable and problematic | ADR-002, ADR-006 |
 | Scanned PDF uploads become a common user complaint | ADR-014 |
 | Prompt iteration speed blocks feature development | ADR-016 |
 | An AI feature requires multi-step reasoning or retrieval | ADR-015 |
 | Mock interview is prioritised as the next product feature | ADR-017 |
-| A security audit identifies JWT storage as a live risk | ADR-010 |
+| Full CSRF protection is needed before public launch | ADR-021 |
+| Refresh tokens are needed for longer session lifetimes | ADR-021 |
 | Manual secret rotation causes an incident | ADR-019 |
 
 ---
 
-*Last updated: Sprint 1 — initial decision record.*
+*Last updated: Sprint 1 — ADR-010 superseded; ADR-021 added for HttpOnly cookie auth decision.*
 *Add a new ADR when a significant architectural or product decision is made. Do not delete superseded ADRs — update their status to "Superseded" and reference the replacement.*

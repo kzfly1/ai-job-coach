@@ -12,7 +12,7 @@ Sprint 1 establishes the project skeleton and the first two complete vertical sl
 
 **Backend:** ASP.NET Core Web API with one `AppDbContext`, SharedKernel (`Result<T>`, `Error`, `Guard`), Serilog structured logging, GlobalExceptionHandler, and ResultMapper. Auth module with custom JWT + BCrypt. Resumes module with `IFileStorageService`, `LocalFileStorageService`, and full CRUD including soft delete. EF InitialCreate migration with `users` and `resumes` tables.
 
-**Frontend:** Next.js App Router, TypeScript strict mode, TanStack Query v5, shadcn/ui. `apiClient` wrapper, `useAuth()` hook, register and login pages, protected dashboard layout, resume upload page with XHR progress, and resume list page.
+**Frontend:** Next.js App Router, TypeScript strict mode, TanStack Query v5, shadcn/ui. `apiClient` wrapper with `credentials: 'include'`, `useAuth()` hook backed by `GET /api/auth/me`, register and login pages (React Hook Form + Zod), HttpOnly cookie auth flow, protected dashboard layout, resume upload page with XHR progress, and resume list page.
 
 **What is not yet done:** text extraction, AI calls, job description analysis, matching, application tracking, Azure storage, and CI/CD.
 
@@ -321,7 +321,7 @@ These are not planned for the MVP and must not be scaffolded during the current 
 
 **Engineering**
 - Background job queue (`BackgroundService` or Hangfire) for long-running AI calls with polling.
-- `httpOnly` cookie storage for JWTs (replacing `localStorage`).
+- Full CSRF token protection (beyond `SameSite=Lax`) before public production launch.
 - Azure Key Vault for secret management.
 - `pgvector` for semantic similarity search across resumes or matches.
 - Per-environment feature flags.
@@ -343,5 +343,5 @@ These rules apply for the duration of the MVP build. When a new idea arises, app
 
 ---
 
-*Last updated: Sprint 1 in progress.*
+*Last updated: Sprint 1 in progress — auth updated from localStorage JWT to HttpOnly cookie; Post-MVP engineering list updated accordingly.*
 *Update this document at the start of each sprint to reflect what was completed, what changed, and what is next.*
