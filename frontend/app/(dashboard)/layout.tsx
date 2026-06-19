@@ -6,19 +6,27 @@ import type {ReactNode} from "react";
 import {useEffect} from "react";
 import Link from "next/link";
 import {Button} from "@/components/ui/button";
+import {AuthCheckErrorState} from "@/components/auth/AuthCheckErrorState";
+import {getApiErrorMessage} from "@/lib/api-error";
 
 export default function DashboardLayout({children,}: {
     children: ReactNode;
 }) {
     const router = useRouter();
 
-    const {user, isLoading, logout, isLoggingOut} = useAuth();
+    const {user, isLoading, hasAuthCheckFailure, error, logout, isLoggingOut} = useAuth();
+
+    const authCheckErrorMessage = getApiErrorMessage(
+        error,
+        "The authentication service is currently unavailable. Please try again."
+    );
 
     useEffect(() => {
-        if (!isLoading && !user) {
-            router.replace("/login");
+        if (isLoading || user || hasAuthCheckFailure) {
+            return;
         }
-    }, [isLoading, user, router]);
+        router.replace("/login");
+    }, [hasAuthCheckFailure, isLoading, user, router]);
 
     async function handleLogout() {
         await logout();
@@ -31,6 +39,10 @@ export default function DashboardLayout({children,}: {
                 <p className="text-sm text-muted-foreground">Loading...</p>
             </main>
         )
+    }
+
+    if (hasAuthCheckFailure) {
+        return <AuthCheckErrorState message={authCheckErrorMessage}/>;
     }
 
     if (!user) {

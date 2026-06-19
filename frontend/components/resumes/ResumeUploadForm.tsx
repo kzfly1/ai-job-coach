@@ -13,6 +13,7 @@ import {getApiErrorMessage} from "@/lib/api-error";
 import {useUploadResume} from "@/lib/hooks/use-resumes";
 import {validateResumeFile} from "@/lib/validations/resume-file";
 import type {ResumeDto} from "@/types/api";
+import {useRouter} from "next/navigation";
 
 type FormSubmitHandler = NonNullable<ComponentProps<"form">>["onSubmit"];
 
@@ -23,6 +24,7 @@ export function ResumeUploadForm() {
     const [uploadedResume, setUploadedResume] = useState<ResumeDto | null>(null);
 
     const uploadMutation = useUploadResume();
+    const router = useRouter();
 
     function resetUploadState() {
         setProgress(0);
@@ -66,6 +68,7 @@ export function ResumeUploadForm() {
                 onSuccess: (resume) => {
                     setProgress(100);
                     setUploadedResume(resume);
+                    router.push("/resumes");
                 },
             },
         );
