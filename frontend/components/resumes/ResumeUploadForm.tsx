@@ -9,21 +9,12 @@ import {SelectedResumeFile} from "@/components/resumes/SelectedResumeFile";
 import {FormErrorMessage} from "@/components/shared/FormErrorMessage";
 import {Button} from "@/components/ui/button";
 import {Card, CardContent, CardHeader, CardTitle} from "@/components/ui/card";
+import {getApiErrorMessage} from "@/lib/api-error";
 import {useUploadResume} from "@/lib/hooks/use-resumes";
 import {validateResumeFile} from "@/lib/validations/resume-file";
-import type {ApiClientError, ResumeDto} from "@/types/api";
+import type {ResumeDto} from "@/types/api";
 
 type FormSubmitHandler = NonNullable<ComponentProps<"form">>["onSubmit"];
-
-function getApiErrorMessage(error: unknown): string {
-    const apiError = error as Partial<ApiClientError>;
-
-    if (typeof apiError.message === "string" && apiError.message.length > 0) {
-        return apiError.message;
-    }
-
-    return "Resume upload failed. Please try again.";
-}
 
 export function ResumeUploadForm() {
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -81,7 +72,7 @@ export function ResumeUploadForm() {
     };
 
     const uploadError = uploadMutation.isError
-        ? getApiErrorMessage(uploadMutation.error)
+        ? getApiErrorMessage(uploadMutation.error, "Resume upload failed. Please try again.")
         : null;
 
     return (

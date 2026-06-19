@@ -53,6 +53,10 @@ export default function DashboardLayout({children,}: {
                             Dashboard
                         </Link>
 
+                        <Link href="/resumes" className="text-sm font-medium text-foreground hover:underline">
+                            Resumes
+                        </Link>
+
                         <Button variant="outline" size="sm" onClick={handleLogout} disabled={isLoggingOut}>
                             {isLoggingOut ? "Logging out..." : "Logout"}
                         </Button>
