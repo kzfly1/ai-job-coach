@@ -1,4 +1,5 @@
 ﻿using AIJobCoach.Api.Modules.Auth.Domain;
+using AIJobCoach.Api.Modules.JobDescriptions.Domain;
 using AIJobCoach.Api.Modules.Resumes.Domain;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,6 +13,8 @@ public class AppDbContext : DbContext
 
     public DbSet<User> Users => Set<User>();
     public DbSet<Resume> Resumes => Set<Resume>();
+    public DbSet<ResumeAnalysis> ResumeAnalysis => Set<ResumeAnalysis>();
+    public DbSet<JobDescription> JobDescriptions => Set<JobDescription>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
