@@ -48,6 +48,8 @@ public sealed class Resume
     public bool IsActive { get; private set; }
     
     public DateTimeOffset UploadedAt { get; private set; }
+    
+    public ResumeAnalysis? Analysis { get; private set; }
 
     public void Deactivate()
     {
