@@ -33,7 +33,7 @@ public sealed class ResumeServiceTests
         // Arrange
         await using var dbContext = CreateDbContext();
         var storage = new FakeFileStorageService();
-        var service = new ResumeService(dbContext, storage);
+        var service = new ResumeService(dbContext, storage, new FakeResumeTextExtractor());
         await using var stream = CreateFileStream();
 
         // Act
@@ -57,7 +57,7 @@ public sealed class ResumeServiceTests
         // Arrange
         await using var dbContext = CreateDbContext();
         var storage = new FakeFileStorageService();
-        var service = new ResumeService(dbContext, storage);
+        var service = new ResumeService(dbContext, storage, new FakeResumeTextExtractor());
         await using var stream = CreateFileStream();
 
         // Act
@@ -81,7 +81,7 @@ public sealed class ResumeServiceTests
         // Arrange
         await using var dbContext = CreateDbContext();
         var storage = new FakeFileStorageService();
-        var service = new ResumeService(dbContext, storage);
+        var service = new ResumeService(dbContext, storage, new FakeResumeTextExtractor());
         var userId = Guid.NewGuid();
         await using var stream = CreateFileStream();
 
@@ -115,7 +115,7 @@ public sealed class ResumeServiceTests
         // Arrange
         await using var dbContext = CreateDbContext();
         var storage = new FakeFileStorageService();
-        var service = new ResumeService(dbContext, storage);
+        var service = new ResumeService(dbContext, storage, new FakeResumeTextExtractor());
         await using var stream = CreateFileStream();
 
         // Act
@@ -133,11 +133,65 @@ public sealed class ResumeServiceTests
     }
 
     [Fact]
+    public async Task UploadAsync_ShouldPersistExtractedContentText_WhenExtractorReturnsText()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var storage = new FakeFileStorageService();
+        var extractor = new FakeResumeTextExtractor("Extracted resume text.");
+        var service = new ResumeService(dbContext, storage, extractor);
+        await using var stream = CreateFileStream();
+
+        // Act
+        var result = await service.UploadAsync(
+            Guid.NewGuid(),
+            stream,
+            "resume.pdf",
+            PdfContentType,
+            fileSizeBytes: 1024);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ContentTextLength.Should().Be("Extracted resume text.".Length);
+        extractor.ExtractCallCount.Should().Be(1);
+
+        var persisted = await dbContext.Resumes.SingleAsync();
+        persisted.ContentText.Should().Be("Extracted resume text.");
+    }
+
+    [Fact]
+    public async Task UploadAsync_ShouldSucceedWithNullContentText_WhenExtractionFails()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var storage = new FakeFileStorageService();
+        var extractor = new FakeResumeTextExtractor(result: null);
+        var service = new ResumeService(dbContext, storage, extractor);
+        await using var stream = CreateFileStream();
+
+        // Act
+        var result = await service.UploadAsync(
+            Guid.NewGuid(),
+            stream,
+            "resume.pdf",
+            PdfContentType,
+            fileSizeBytes: 1024);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.ContentTextLength.Should().Be(0);
+        storage.SaveCallCount.Should().Be(1);
+
+        var persisted = await dbContext.Resumes.SingleAsync();
+        persisted.ContentText.Should().BeNull();
+    }
+
+    [Fact]
     public async Task GetByIdAsync_ShouldReturnNull_WhenResumeBelongsToAnotherUser()
     {
         // Arrange
         await using var dbContext = CreateDbContext();
-        var service = new ResumeService(dbContext, new FakeFileStorageService());
+        var service = new ResumeService(dbContext, new FakeFileStorageService(), new FakeResumeTextExtractor());
 
         var ownerId = Guid.NewGuid();
         var resume = new Resume(ownerId, "resume.pdf", "path/resume.pdf", contentText: null);
@@ -156,7 +210,7 @@ public sealed class ResumeServiceTests
     {
         // Arrange
         await using var dbContext = CreateDbContext();
-        var service = new ResumeService(dbContext, new FakeFileStorageService());
+        var service = new ResumeService(dbContext, new FakeFileStorageService(), new FakeResumeTextExtractor());
 
         var userId = Guid.NewGuid();
         var otherUserId = Guid.NewGuid();
@@ -180,7 +234,7 @@ public sealed class ResumeServiceTests
         // Arrange
         await using var dbContext = CreateDbContext();
         var storage = new FakeFileStorageService();
-        var service = new ResumeService(dbContext, storage);
+        var service = new ResumeService(dbContext, storage, new FakeResumeTextExtractor());
 
         var userId = Guid.NewGuid();
         var resume = new Resume(userId, "resume.pdf", "path/resume.pdf", contentText: null);
@@ -205,7 +259,7 @@ public sealed class ResumeServiceTests
         // Arrange
         await using var dbContext = CreateDbContext();
         var storage = new FakeFileStorageService();
-        var service = new ResumeService(dbContext, storage);
+        var service = new ResumeService(dbContext, storage, new FakeResumeTextExtractor());
 
         var ownerId = Guid.NewGuid();
         var resume = new Resume(ownerId, "resume.pdf", "path/resume.pdf", contentText: null);
@@ -230,7 +284,7 @@ public sealed class ResumeServiceTests
         // Arrange
         await using var dbContext = CreateDbContext();
         var storage = new FakeFileStorageService();
-        var service = new ResumeService(dbContext, storage);
+        var service = new ResumeService(dbContext, storage, new FakeResumeTextExtractor());
 
         var userId = Guid.NewGuid();
         var resume = new Resume(userId, "resume.pdf", "path/resume.pdf", contentText: null);
@@ -270,6 +324,27 @@ public sealed class ResumeServiceTests
         {
             DeleteCallCount++;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeResumeTextExtractor : IResumeTextExtractor
+    {
+        private readonly string? _result;
+
+        public FakeResumeTextExtractor(string? result = null)
+        {
+            _result = result;
+        }
+
+        public int ExtractCallCount { get; private set; }
+
+        public Task<string?> ExtractAsync(
+            Stream stream,
+            string mimeType,
+            CancellationToken cancellationToken = default)
+        {
+            ExtractCallCount++;
+            return Task.FromResult(_result);
         }
     }
 }
