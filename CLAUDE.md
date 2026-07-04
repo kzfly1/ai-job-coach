@@ -20,6 +20,7 @@ Read these additional docs only when relevant:
 * `docs/ARCHITECTURE.md` — when changing project structure, module structure, layers, dependency direction, or integration boundaries
 * `docs/DECISIONS.md` — when a ticket involves technical trade-offs or competing implementation options
 * `docs/ROADMAP.md` — when a ticket affects sprint planning, feature sequencing, or future scope
+* `docs/AI_WORKFLOW.md` — when deciding how to classify, plan, implement, review, and verify a coding task
 
 ## Working Rules
 
