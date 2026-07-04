@@ -102,6 +102,7 @@ try
     builder.Services.AddScoped<JwtService>();
     builder.Services.AddScoped<RegisterRequestValidator>();
     builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+    builder.Services.AddScoped<IResumeTextExtractor, ResumeTextExtractor>();
     builder.Services.AddScoped<ResumeService>();
 
     builder.Services.AddControllers();
