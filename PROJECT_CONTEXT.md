@@ -28,6 +28,12 @@ Sprint 1 delivered: Auth (register, login, cookie auth), Resumes module (upload,
 
 Sprint 2 focus: Resume Intelligence (text extraction + AI-generated Developer Profile) and JD Intelligence (structured Job Profile from pasted JD).
 
+**Sprint 2 progress:**
+
+- **S2-02 (Resume text extraction) — complete.** `ResumeTextExtractor` extracts PDF text via PdfPig and DOCX text via DocumentFormat.OpenXml. `ResumeService.UploadAsync` now saves the file, resets the stream, extracts text, and stores `ContentText`. Extraction failure returns `null` and does **not** fail the upload. Sprint 1 historical resumes are not backfilled.
+- **S2-03 (OpenAI client foundation) — complete.** `Modules/AI/` added with `IOpenAIClient` (low-level OpenAI transport), `OpenAIClient`, `PromptLoader`, `OpenAIParseException`, and the `resume-analysis.txt` / `jd-analysis.txt` prompt files. Named `HttpClient` `"openai"` is configured with a 30-second timeout and a Polly retry policy (3 attempts at 2s / 4s / 8s). Config keys: `OpenAI:ApiKey`, `OpenAI:Model` (default `gpt-4o-mini`), `OpenAI:BaseUrl`. `OpenAI:ApiKey` is required (validated at startup) outside Development.
+- **Not yet implemented:** `ResumeAnalysisService`, `JobDescriptionService`, and their endpoints — planned later-Sprint-2 tickets that will consume `IOpenAIClient`.
+
 `LocalFileStorageService` remains active. Azure Blob Storage is **not** part of Sprint 2 — it is a Release Readiness task, planned after the core AI workflows are validated.
 
 ---
@@ -246,7 +252,7 @@ chore(deps): upgrade EF Core to 8.0.6
 
 ## Last Updated
 
-- Sprint 1 complete. Sprint 2 in progress.
+- Sprint 1 complete. Sprint 2 in progress — S2-02 (resume text extraction) and S2-03 (OpenAI client foundation) complete; `ResumeAnalysisService` and `JobDescriptionService` not yet implemented.
 - Roadmap rewritten to reflect Roadmap v2 product direction: eight sprints across two product tracks (Application Copilot + Career Intelligence).
 - Azure Blob Storage moved out of Sprint 2 — now a Release Readiness task with no fixed sprint assignment.
 - Azure Blob, CI/CD, Application Insights, security headers, and health checks documented as a Release Readiness milestone, not sprint work.

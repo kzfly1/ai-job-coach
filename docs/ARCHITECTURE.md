@@ -367,20 +367,23 @@ No other code changes when the implementation is swapped.
 
 ## AI Integration Strategy
 
-The AI module lives at `Modules/AI/` and is introduced in Sprint 2. It contains the interface, the OpenAI implementation, and prompt templates as plain text files.
+The AI module lives at `Modules/AI/` and is introduced in Sprint 2. It contains the transport client abstraction, the OpenAI implementation, and prompt templates as plain text files.
 
 ### Interface
 
+The current, implemented AI seam is `IOpenAIClient` — a low-level transport abstraction over the OpenAI chat completions endpoint (added in S2-03). It returns the raw model content string; building prompts and parsing responses into typed shapes is the responsibility of the consuming service.
+
 ```csharp
-public interface IAIAnalysisService
+public interface IOpenAIClient
 {
-    Task<JDAnalysisResult>     AnalyzeJobDescriptionAsync(string jdText, CancellationToken ct = default);
-    Task<ResumeAnalysisResult> AnalyzeResumeAsync(string resumeText, CancellationToken ct = default);
-    Task<MatchResult>          MatchResumeToJDAsync(string resumeText, string jdText, CancellationToken ct = default);
+    Task<string> CompleteAsync(
+        string systemPrompt,
+        string userPrompt,
+        CancellationToken ct = default);
 }
 ```
 
-This interface has exactly three methods — one per AI capability in the MVP. Do not add interview-related methods.
+Higher-level services sit on top of `IOpenAIClient`. `ResumeAnalysisService` (S2-04) and `JobDescriptionService` (S2-05) are planned later-Sprint-2 tickets and are **not yet implemented** — each will call `IOpenAIClient.CompleteAsync` with its own prompt and parse the result into a typed profile. Keep each AI capability to a single structured prompt-response call. Do not add interview-related methods.
 
 ### Prompt Management
 
@@ -397,17 +400,27 @@ Every prompt includes a system instruction telling the model to return valid JSO
 
 ### OpenAI HTTP Client
 
-`OpenAIAnalysisService` uses a named `HttpClient` registered with a Polly retry policy (3 attempts, exponential backoff). It logs the raw response string before attempting to deserialise. On a parse failure it throws `AIResponseParseException` with the raw response attached.
+`OpenAIClient` (the `IOpenAIClient` implementation) uses a named `HttpClient` `"openai"` registered with a 30-second timeout and a Polly retry policy (3 attempts at 2s / 4s / 8s). On a parse failure — malformed JSON or an envelope with no message content — it throws `OpenAIParseException` with the raw response attached.
 
 ```csharp
-builder.Services.AddHttpClient("openai", client =>
+builder.Services.AddHttpClient(OpenAIClient.HttpClientName, client =>
 {
-    client.BaseAddress = new Uri("https://api.openai.com/");
-    client.DefaultRequestHeaders.Add("Authorization", $"Bearer {openAiKey}");
+    client.BaseAddress = new Uri(openAiBaseUrl);   // OpenAI:BaseUrl, default https://api.openai.com/
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.Authorization =
+        new AuthenticationHeaderValue("Bearer", openAiApiKey);
 })
-.AddTransientHttpErrorPolicy(p =>
-    p.WaitAndRetryAsync(3, attempt => TimeSpan.FromSeconds(Math.Pow(2, attempt))));
+.AddPolicyHandler(HttpPolicyExtensions
+    .HandleTransientHttpError()
+    .WaitAndRetryAsync(new[]
+    {
+        TimeSpan.FromSeconds(2),
+        TimeSpan.FromSeconds(4),
+        TimeSpan.FromSeconds(8)
+    }));
 ```
+
+Config keys: `OpenAI:ApiKey`, `OpenAI:Model` (default `gpt-4o-mini`), `OpenAI:BaseUrl`. `OpenAI:ApiKey` is validated at startup — the app refuses to start if it is absent outside the Development environment.
 
 AI calls are synchronous from the HTTP request perspective — the controller waits for the result. This keeps the implementation simple. If response times prove problematic in production, a `BackgroundService` with a polling endpoint can be introduced without changing the interface.
 
@@ -614,10 +627,9 @@ Follow these steps in order. Do not create the module folder until the sprint be
 
 ### Adding a New AI Capability
 
-1. Add a method to `IAIAnalysisService`.
-2. Implement the method in `OpenAIAnalysisService`.
-3. Create the prompt file in `Modules/AI/Prompts/`.
-4. Register the prompt in `PromptLoader` if it uses static loading.
+1. Create a higher-level service (for example, `ResumeAnalysisService`) that injects `IOpenAIClient`.
+2. Create the prompt file in `Modules/AI/Prompts/` and load it via `PromptLoader`.
+3. In the service, render the prompt and call `IOpenAIClient.CompleteAsync`, then parse the returned content into a typed result.
 
 Do not add agent orchestration, tool calling, or multi-step pipelines. A single structured prompt per operation is the pattern for this MVP.
 
@@ -646,5 +658,5 @@ The system prompt instruction to return JSON only must appear in every prompt. T
 
 ---
 
-*Last updated: Sprint 1 — auth updated from localStorage JWT to HttpOnly cookie; apiClient updated to use credentials: include; useAuth updated to hydrate from GET /api/auth/me.*
+*Last updated: Sprint 2 (S2-02, S2-03) — resume text extraction added (PdfPig / DocumentFormat.OpenXml); AI module introduced with `IOpenAIClient` as the low-level OpenAI transport seam, `OpenAIClient`, `PromptLoader`, and `OpenAIParseException`. `ResumeAnalysisService` and `JobDescriptionService` remain planned, not yet implemented.*
 *Update this document when a new module is added, a layer responsibility changes, or an architectural decision is revised.*
