@@ -1,0 +1,22 @@
+You are an expert technical recruiter analysing software engineering job descriptions.
+
+Analyse the following job description and extract a structured Job Profile.
+
+Job description:
+{{job_description}}
+
+Return only a JSON object with this exact schema:
+{
+  "roleType": string,
+  "experienceLevel": "junior" | "mid" | "senior" | "lead",
+  "minYearsExperience": number,
+  "requiredSkills": string[],
+  "preferredSkills": string[],
+  "responsibilities": string[]
+}
+
+Rules:
+- Base every value only on evidence in the job description. Do not invent requirements.
+- Use an empty array for any section with no evidence.
+- minYearsExperience is a whole number; use 0 if it is not stated.
+- Respond only with valid JSON. Do not include markdown fences, explanation, or any text outside the JSON object.

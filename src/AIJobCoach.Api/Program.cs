@@ -1,6 +1,8 @@
 using System.Text;
 using AIJobCoach.Api.Data;
 using AIJobCoach.Api.Middleware;
+using AIJobCoach.Api.Modules.AI.Application;
+using AIJobCoach.Api.Modules.AI.Infrastructure;
 using AIJobCoach.Api.Modules.Auth.Application;
 using AIJobCoach.Api.Modules.Resumes.Application;
 using AIJobCoach.Api.Modules.Resumes.Infrastructure;
@@ -8,6 +10,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Polly;
+using Polly.Extensions.Http;
 using Serilog;
 using Serilog.Formatting.Compact;
 
@@ -104,6 +108,44 @@ try
     builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
     builder.Services.AddScoped<IResumeTextExtractor, ResumeTextExtractor>();
     builder.Services.AddScoped<ResumeService>();
+
+    // AI module — OpenAI transport client.
+    var openAiApiKey = builder.Configuration["OpenAI:ApiKey"];
+    if (!builder.Environment.IsDevelopment() && string.IsNullOrWhiteSpace(openAiApiKey))
+    {
+        throw new InvalidOperationException(
+            "OpenAI:ApiKey must be configured outside of the Development environment.");
+    }
+
+    var openAiBaseUrl = builder.Configuration["OpenAI:BaseUrl"];
+    if (string.IsNullOrWhiteSpace(openAiBaseUrl))
+    {
+        openAiBaseUrl = "https://api.openai.com/";
+    }
+
+    builder.Services.AddHttpClient(OpenAIClient.HttpClientName, client =>
+    {
+        client.BaseAddress = new Uri(openAiBaseUrl);
+        client.Timeout = TimeSpan.FromSeconds(30);
+        if (!string.IsNullOrWhiteSpace(openAiApiKey))
+        {
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", openAiApiKey);
+        }
+    })
+    .AddPolicyHandler(HttpPolicyExtensions
+        .HandleTransientHttpError()
+        .WaitAndRetryAsync(new[]
+        {
+            TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(4),
+            TimeSpan.FromSeconds(8)
+        }));
+
+    var promptsDirectory = Path.Combine(
+        builder.Environment.ContentRootPath, "Modules", "AI", "Prompts");
+    builder.Services.AddSingleton(new PromptLoader(promptsDirectory));
+    builder.Services.AddScoped<IOpenAIClient, OpenAIClient>();
 
     builder.Services.AddControllers();
     builder.Services.Configure<ApiBehaviorOptions>(options =>
