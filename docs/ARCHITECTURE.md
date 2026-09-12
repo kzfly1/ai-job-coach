@@ -1,662 +1,307 @@
 # AI Job Coach — Architecture
 
-This document describes the system architecture, the reasoning behind key decisions, and the conventions for extending the codebase. It is intended for both the solo developer and for coding agents working on this project.
+Durable system shape and engineering conventions.
 
-For project scope, sprint plan, hard constraints, and configuration keys, see `docs/PROJECT_CONTEXT.md`.
+This document describes how the system is structured and why. It does not describe
+what is currently built or what is planned — inspect the repository for the former,
+and the current task's scope for the latter.
 
----
-
-## Overview
-
-AI Job Coach is a full-stack web application with a clear client-server split. The frontend is a Next.js App Router application. The backend is a single ASP.NET Core Web API. There is no BFF, no API gateway, and no microservices. The two processes communicate over HTTPS/JSON.
-
-```
-┌─────────────────────────────────────────────────┐
-│               Next.js Frontend                   │
-│   App Router · Tailwind · shadcn/ui              │
-│   TanStack Query · React Hook Form · Zod         │
-└────────────────────┬────────────────────────────┘
-                     │  HTTPS / JSON
-┌────────────────────▼────────────────────────────┐
-│          ASP.NET Core Web API (.NET 8)           │
-│          Modular Monolith                        │
-│                                                  │
-│  ┌──────────────────────────────────────────┐   │
-│  │  Auth · Resumes · JobDescriptions        │   │
-│  │  Matching · JobTracking · AI             │   │
-│  └──────────────────────────────────────────┘   │
-│                                                  │
-│  AppDbContext (EF Core 8)                        │
-│  IFileStorageService                             │
-│  IAIAnalysisService                              │
-└──────────┬──────────────────┬───────────────────┘
-           │                  │
-  ┌────────▼───────┐  ┌───────▼──────────┐
-  │  PostgreSQL     │  │  Azure Blob /     │
-  │  (via Npgsql)   │  │  Local Storage   │
-  └────────────────┘  └──────────────────┘
-                               │
-                    ┌──────────▼──────────┐
-                    │  OpenAI API          │
-                    │  (direct HTTP, no   │
-                    │  agent framework)   │
-                    └─────────────────────┘
-```
+For the reasoning behind specific trade-offs, see [DECISIONS.md](DECISIONS.md).
+For agent working rules, see [../CLAUDE.md](../CLAUDE.md).
 
 ---
 
-## Backend Architecture
+## System Shape
 
-### Why a Modular Monolith
-
-The backend is a single deployable ASP.NET Core Web API project. All modules live inside it as namespace-separated folders. There are no separate assemblies or processes.
-
-This is the right choice for a solo-developer MVP because it keeps EF Core migrations, DI registration, and build configuration simple. Module boundaries are enforced through folder structure, namespaces, and dependency rules — not by physical assembly separation. If a module needs to be extracted later, the folder structure already matches what a separate project would look like.
-
-### Project Layout
+A Next.js App Router frontend and a single ASP.NET Core Web API communicating over
+HTTPS/JSON. No BFF, no API gateway, no microservices.
 
 ```
-src/
-├── AIJobCoach.Api/
-│   ├── Program.cs
-│   ├── Data/
-│   │   └── AppDbContext.cs
-│   ├── Migrations/
-│   ├── Middleware/
-│   │   └── GlobalExceptionHandler.cs
-│   ├── Common/
-│   │   └── Http/
-│   │       └── ResultMapper.cs
-│   └── Modules/
-│       ├── Auth/
-│       ├── Resumes/
-│       ├── JobDescriptions/        ← Sprint 2
-│       ├── Matching/               ← Sprint 3
-│       ├── JobTracking/            ← Sprint 4
-│       └── AI/                    ← Sprint 2
-│
-└── AIJobCoach.SharedKernel/
-    ├── Result.cs
-    ├── PagedResult.cs
-    └── Guard.cs
+Next.js frontend
+      │  HTTPS / JSON  (HttpOnly cookie auth)
+ASP.NET Core Web API  ── modular monolith, one deployable process
+      │
+      ├── PostgreSQL          (EF Core / Npgsql)
+      ├── File storage        (IFileStorageService seam)
+      └── OpenAI              (direct HTTP, no agent framework)
 ```
 
-`AIJobCoach.SharedKernel` has zero dependencies on the Api project or any module. It contains only `Result<T>`, `Error`, `PagedResult<T>`, and `Guard`. It is never a dumping ground for HTTP concerns — those stay in `AIJobCoach.Api`.
+**Stack.** Backend: ASP.NET Core Web API on .NET 8, EF Core 8, PostgreSQL, Serilog,
+FluentValidation. Frontend: Next.js App Router, TypeScript strict mode, Tailwind,
+shadcn/ui, TanStack Query v5, React Hook Form, Zod. Auth: custom JWT + BCrypt.
+Testing: xUnit with FluentAssertions.
 
 ---
 
-## Module Structure
+## Backend
 
-Every module follows the same four-layer folder structure. `Auth` and `Resumes` are the Sprint 1 examples.
+### Modular Monolith
+
+One deployable API project. Modules are namespace-separated folders inside it, not
+separate assemblies. Boundaries are enforced by folder structure, namespaces, and
+review — not by the compiler. The folder layout deliberately mirrors what a separate
+project would look like, so extracting a module later is mechanical.
+
+A separate `SharedKernel` project holds `Result<T>`, `Error`, `PagedResult<T>`, and
+`Guard`. It depends on nothing else in the solution and never absorbs HTTP concerns.
+
+### Module Layout
+
+Every module follows the same four-layer structure:
 
 ```
-Modules/Auth/
-├── Domain/
-│   └── User.cs
-├── Application/
-│   ├── AuthService.cs
-│   ├── AuthDtos.cs
-│   └── RegisterRequestValidator.cs
-├── Infrastructure/
-│   └── UserConfiguration.cs
-└── Controllers/
-    └── AuthController.cs
-
-Modules/Resumes/
-├── Domain/
-│   └── Resume.cs                  ← entity class is singular; module folder is plural
-├── Application/
-│   ├── ResumeService.cs
-│   ├── ResumeDtos.cs
-│   └── IFileStorageService.cs
-├── Infrastructure/
-│   ├── ResumeConfiguration.cs
-│   ├── LocalFileStorageService.cs
-│   └── AzureBlobStorageService.cs ← Sprint 2
-└── Controllers/
-    └── ResumeController.cs
+Modules/{ModuleName}/
+  Domain/          entities only
+  Application/     services, DTOs, validators, owned interfaces
+  Infrastructure/  EF configurations, external adapters
+  Controllers/     thin HTTP adapters
 ```
 
-The module folder is named `Resumes` (plural) to avoid a namespace collision with the `Resume` entity class. The entity class itself remains `Resume`. This naming convention applies to any future module where the entity name matches the module name.
+Module folders are plural; entity classes are singular (`Modules/Resumes/` contains
+`Resume`). This avoids a namespace collision between the module and its entity, and
+applies to every module where the two names would otherwise match.
 
----
+Create a module folder only when a task requires it. Empty or placeholder modules are
+not created in advance.
 
-## Layer Responsibilities
+### Layer Responsibilities
 
-### Domain
+**Domain** — entity classes and their business state and behaviour. No EF attributes,
+no DTOs, no HTTP types, no infrastructure dependencies. Entities protect their
+invariants: prefer private setters with constructors or factory methods over public
+mutable properties.
 
-Contains entity classes only. No EF attributes, no DTOs, no HTTP types, no external dependencies.
+**Application** — business workflow. Services, DTOs, FluentValidation validators, and
+any interface the module owns (for example, a storage or extraction seam). Application
+services inject `AppDbContext` directly. They never see `HttpContext`, `ClaimsPrincipal`,
+or `IActionResult`; a caller's identity arrives as a plain `Guid` parameter. Operations
+that can fail with a known business error return `Result<T>`.
 
-```csharp
-// Modules/Auth/Domain/User.cs
-public class User
-{
-    public Guid Id { get; private set; }
-    public string Email { get; private set; }
-    public string PasswordHash { get; private set; }
-    public string FullName { get; private set; }
-    public string? Headline { get; private set; }
-    public DateTime CreatedAt { get; private set; }
-    public DateTime UpdatedAt { get; private set; }
+**Infrastructure** — `IEntityTypeConfiguration<T>` classes and adapters to anything
+external: file storage, HTTP clients, document parsers.
 
-    // Constructor or factory method — no public property setters for sensitive fields
-}
-```
+**Controllers** — receive the request, extract identity from JWT claims, call one
+Application service, map the result. Nothing else. No business logic, no data access.
 
-All EF mapping lives in the corresponding `Infrastructure/` configuration class, not in the entity.
+### Controller Conventions
 
-### Application
-
-Contains service classes, DTOs, and FluentValidation validators. This is where business logic lives.
-
-Application services receive and return domain types or DTOs. They do not know about HTTP, `HttpContext`, or `ClaimsPrincipal`. UserId is passed in as a plain `Guid` parameter, extracted upstream in the controller.
-
-Application services inject `AppDbContext` directly. There is no repository interface between the service and EF Core — see the Data Access section for the rationale.
-
-```csharp
-// Modules/Resumes/Application/ResumeService.cs
-public class ResumeService(AppDbContext db, IFileStorageService storage)
-{
-    public async Task<Result<ResumeDto>> UploadAsync(
-        Stream fileStream, string fileName, string contentType,
-        Guid userId, CancellationToken ct = default)
-    { ... }
-
-    public async Task<ResumeDto?> GetByIdAsync(Guid id, Guid userId, CancellationToken ct = default)
-    { ... }
-}
-```
-
-### Infrastructure
-
-Contains EF `IEntityTypeConfiguration<T>` classes and external service adapters (file storage, Azure Blob, OpenAI HTTP client).
-
-```csharp
-// Modules/Resumes/Infrastructure/ResumeConfiguration.cs
-public class ResumeConfiguration : IEntityTypeConfiguration<Resume>
-{
-    public void Configure(EntityTypeBuilder<Resume> builder)
-    {
-        builder.ToTable("resumes");
-        builder.HasKey(r => r.Id);
-        builder.Property(r => r.FileName).IsRequired();
-        // ...
-    }
-}
-```
-
-EF picks up all `IEntityTypeConfiguration` classes in the assembly via `ApplyConfigurationsFromAssembly` in `AppDbContext.OnModelCreating`. No manual registration is needed when a new module adds a configuration class.
-
-### Controllers
-
-Controllers are thin HTTP adapters. They have three responsibilities: receive the HTTP request, extract identity from the JWT claims, and call an Application service. They do not contain business logic.
-
-Controllers return `IActionResult`. They use the shared `ResultMapper` to translate `Result<T>` from the service layer into the appropriate HTTP status code.
-
----
-
-## Controller API Style
-
-### Attributes and Routing
-
-```csharp
-[ApiController]
-[Route("api/auth")]
-public class AuthController(AuthService authService) : ControllerBase
-{
-    [HttpPost("register")]
-    public async Task<IActionResult> Register(RegisterRequest request)
-    {
-        var validator = new RegisterRequestValidator();
-        var validation = await validator.ValidateAsync(request);
-        if (!validation.IsValid)
-            return UnprocessableEntity(validation.ToValidationErrorResponse());
-
-        var result = await authService.RegisterAsync(request.Email, request.FullName, request.Password);
-        // On success: set HttpOnly cookie, return { user: UserProfileDto }
-        if (result.IsSuccess)
-        {
-            Response.Cookies.Append("access_token", result.Value!.Token, new CookieOptions
-            {
-                HttpOnly = true,
-                Secure = !Environment.IsDevelopment(),
-                SameSite = SameSiteMode.Lax,
-                Expires = DateTimeOffset.UtcNow.AddHours(24),
-                Path = "/"
-            });
-            return Created(string.Empty, new { user = result.Value.Profile });
-        }
-        return this.ToActionResult(result, _ => Ok());
-    }
-
-    [HttpGet("me")]
-    [Authorize]
-    public async Task<IActionResult> GetProfile()
-    {
-        var userId = Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-        var result = await authService.GetProfileAsync(userId);
-        return this.ToActionResult(result, Ok);
-    }
-}
-```
-
-Key conventions:
-- `[ApiController]` on every controller — enables automatic model binding and problem details.
-- `[Route("api/{resource}")]` at the class level.
-- `[Authorize]` on individual actions or the whole controller as appropriate.
-- UserId extracted in the controller via `User.FindFirstValue(ClaimTypes.NameIdentifier)`. Services receive a plain `Guid`.
+- `[ApiController]` with a class-level `[Route("api/{resource}")]`.
 - Return `IActionResult`, not `IResult`.
+- Extract the user id from `User.FindFirstValue(ClaimTypes.NameIdentifier)` and pass it
+  to the service as a `Guid`.
+- `[Authorize]` by default; public endpoints are the explicit exception.
+- Validators are invoked explicitly and return `422` on failure. There is no global
+  validation filter.
+- Translate `Result<T>` through the shared `ResultMapper` extension on `ControllerBase`.
+  Controllers never switch on error codes themselves; a new business error code is added
+  to `ResultMapper` and nowhere else.
 
-### ResultMapper
+Business endpoints use controllers. Minimal APIs are reserved for endpoints with no
+auth, validation, or business logic — the health endpoint is the one current example.
 
-`ResultMapper` is a static extension method on `ControllerBase` at `AIJobCoach.Api/Common/Http/ResultMapper.cs`. It centralises the translation from `Result<T>` to `IActionResult` so no controller contains a switch on error codes.
+### Error Contract
 
-```csharp
-public static class ResultMapper
-{
-    public static IActionResult ToActionResult<T>(
-        this ControllerBase controller,
-        Result<T> result,
-        Func<T, IActionResult> onSuccess)
-    {
-        if (result.IsSuccess)
-            return onSuccess(result.Value!);
+Three response shapes, and only three:
 
-        return result.Error!.Code switch
-        {
-            "EMAIL_ALREADY_EXISTS"  => controller.Conflict(result.Error),
-            "INVALID_CREDENTIALS"   => controller.StatusCode(401, result.Error),
-            "USER_NOT_FOUND"        => controller.NotFound(result.Error),
-            "RESUME_NOT_FOUND"      => controller.NotFound(result.Error),
-            "UNSUPPORTED_FILE_TYPE" => controller.UnprocessableEntity(result.Error),
-            "FILE_TOO_LARGE"        => controller.UnprocessableEntity(result.Error),
-            _                       => controller.BadRequest(result.Error)
-        };
-    }
-}
+```
+business    { code, message }
+validation  { code: "VALIDATION_ERROR", message, errors: { field: string[] } }
+unexpected  { code: "INTERNAL_ERROR", message, traceId }
 ```
 
-Add new error codes to this switch only when a new service introduces them. Do not add codes preemptively.
+`GlobalExceptionHandler` implements `IExceptionHandler`, logs the full exception at
+`Error` level, and returns the unexpected shape. It never leaks an exception message or
+stack trace outside Development.
 
-### Error Response Shapes
+### Data Access
 
-All error responses use one of three shapes:
+One `AppDbContext` holds every `DbSet<T>`. Application services inject it directly —
+there are no repository interfaces. EF configurations are discovered automatically via
+`ApplyConfigurationsFromAssembly`, so a new module's configuration needs no registration.
 
-```json
-// Business error (known failure from Result<T>)
-{ "code": "RESUME_NOT_FOUND", "message": "Resume not found." }
+When several services come to share one non-trivial query, extract a focused query class
+into that module's `Infrastructure/` layer. That is not a repository, and it is the only
+sanctioned abstraction over `DbContext`.
 
-// Validation error (FluentValidation failure)
-{ "code": "VALIDATION_ERROR", "message": "Validation failed.", "errors": { "email": ["Invalid email format."] } }
+Migrations live in the API project and are added only when a task requires a schema
+change. A migration covers the tables that task introduces — never tables for work that
+has not started.
 
-// Unexpected error (unhandled exception via GlobalExceptionHandler)
-{ "code": "INTERNAL_ERROR", "message": "An unexpected error occurred.", "traceId": "..." }
-```
+### Registration
 
-### GlobalExceptionHandler
+Services are registered in `Program.cs` with `AddScoped`. Controllers are discovered by
+`MapControllers()` and EF configurations by `ApplyConfigurationsFromAssembly`, so
+neither needs per-module wiring. There is no module registration abstraction.
 
-`GlobalExceptionHandler` implements `IExceptionHandler` and is registered via `app.UseExceptionHandler()`. It logs the full exception at `Error` level using Serilog and returns the `INTERNAL_ERROR` response. It never includes the exception message or stack trace in responses outside of the Development environment.
+Configuration that the application cannot run without — the JWT secret, the OpenAI API
+key outside Development — is validated at startup, and the application refuses to start
+if it is absent or malformed. Secrets live in environment variables, never in committed
+files.
 
 ---
 
-## Data Access Strategy
+## Integration Seams
 
-There is one `AppDbContext` at `AIJobCoach.Api/Data/AppDbContext.cs`. Application services inject it directly. There is no `IResumeRepository` or `IUserRepository`.
+The system has exactly two seams to the outside world. Both are interfaces owned by the
+Application layer and implemented in Infrastructure.
 
-**Why no repository layer:** A repository interface wrapping EF Core with identical method signatures adds an abstraction with no practical benefit at this scale. EF Core's `DbContext` is already a unit of work and supports query composition, lazy loading prevention, change tracking, and transactions. Adding a wrapper makes the codebase harder to navigate and test without making it easier to swap the data store.
+### File Storage
 
-**When to extract a query class:** If multiple services share the same non-trivial query (complex joins, filtered aggregations), extract it to a focused query class inside the module's `Infrastructure/` layer. This is not the same as a general-purpose repository.
+`IFileStorageService` abstracts resume and document storage behind `SaveAsync` and
+`DeleteAsync`. A local-disk implementation serves Development; a cloud implementation is
+selected by environment in DI. Swapping implementations must require no change to any
+service or controller.
 
-**AppDbContext setup:**
+Stored files are named from a generated identifier scoped by user — a client-supplied
+filename is never used as a path on disk. Uploads are constrained by an allowed MIME
+type list and a maximum size, both checked before any I/O.
 
-```csharp
-// Data/AppDbContext.cs
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
-{
-    public DbSet<User> Users => Set<User>();
-    public DbSet<Resume> Resumes => Set<Resume>();
-    // Add new DbSets here as modules are added
+Deletion is soft: the record is flagged inactive and queries filter on it. The stored
+file is retained, which keeps the database and the storage backend from needing a
+coordinated two-phase delete.
 
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
-    }
-}
-```
+### OpenAI
 
-`ApplyConfigurationsFromAssembly` automatically picks up every `IEntityTypeConfiguration<T>` class in the Api assembly, including those added by future modules. No manual registration is needed.
+`IOpenAIClient` is a deliberately low-level transport seam: it takes a system prompt and
+a user prompt and returns the raw model content. Building prompts and parsing responses
+into typed shapes belongs to the calling Application service, not to the client.
 
-**Migrations** live in `AIJobCoach.Api/Migrations/`. Each sprint adds one migration covering only the tables introduced that sprint. Never create tables for future sprints in an earlier migration.
+Higher-level capabilities compose on top of it. Each AI capability is **one structured
+prompt-response call** — no agent orchestration, no tool calling, no multi-step chains.
+A capability that cannot be expressed as a single call is a signal to revisit the design,
+not to add a framework.
 
----
+The client is a named `HttpClient` with an explicit timeout and a Polly retry policy for
+transient errors. A malformed response or an envelope with no content raises a dedicated
+parse exception carrying the raw response, so failures are diagnosable from logs alone.
 
-## File Storage Strategy
-
-File storage is abstracted behind `IFileStorageService` in `Modules/Resumes/Application/`. This allows Sprint 1 to use local disk storage and Sprint 2 to swap to Azure Blob Storage without touching any service or controller code.
-
-```csharp
-public interface IFileStorageService
-{
-    Task<string> SaveAsync(
-        Stream fileStream, string fileName,
-        string contentType, Guid userId,
-        CancellationToken ct = default);
-
-    Task DeleteAsync(string storagePath, CancellationToken ct = default);
-}
-```
-
-**Sprint 1 — LocalFileStorageService:**
-Saves files to a directory configured via `FileStorage__LocalPath`. File names follow the pattern `{userId}/{guid}{extension}` — the original filename is never used on disk. The directory is created at startup if it does not exist.
-
-**Sprint 2 — AzureBlobStorageService:**
-Implements the same interface. Reads `AzureBlob__ConnectionString` and `AzureBlob__ContainerName` from configuration. Uses the same file naming convention. Registration is swapped in DI:
-
-```csharp
-if (builder.Environment.IsDevelopment())
-    builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
-else
-    builder.Services.AddScoped<IFileStorageService, AzureBlobStorageService>();
-```
-
-No other code changes when the implementation is swapped.
-
-**Soft delete:** `DELETE /api/resumes/{id}` sets `IsActive = false`. It does not call `IFileStorageService.DeleteAsync` — the physical file is retained. List and get queries filter on `IsActive = true`. This avoids the complexity of coordinating a DB delete with a Blob Storage delete in Sprint 1.
-
----
-
-## AI Integration Strategy
-
-The AI module lives at `Modules/AI/` and is introduced in Sprint 2. It contains the transport client abstraction, the OpenAI implementation, and prompt templates as plain text files.
-
-### Interface
-
-The current, implemented AI seam is `IOpenAIClient` — a low-level transport abstraction over the OpenAI chat completions endpoint (added in S2-03). It returns the raw model content string; building prompts and parsing responses into typed shapes is the responsibility of the consuming service.
-
-```csharp
-public interface IOpenAIClient
-{
-    Task<string> CompleteAsync(
-        string systemPrompt,
-        string userPrompt,
-        CancellationToken ct = default);
-}
-```
-
-Higher-level services sit on top of `IOpenAIClient`. `ResumeAnalysisService` (S2-04) and `JobDescriptionService` (S2-05) are planned later-Sprint-2 tickets and are **not yet implemented** — each will call `IOpenAIClient.CompleteAsync` with its own prompt and parse the result into a typed profile. Keep each AI capability to a single structured prompt-response call. Do not add interview-related methods.
+AI calls are synchronous from the request's perspective: the controller waits. If latency
+becomes a problem, a background worker with a polling endpoint can be introduced behind
+the same interface.
 
 ### Prompt Management
 
-Prompts are plain text files in `Modules/AI/Prompts/`. They are never hardcoded in C#. A `PromptLoader` service reads and caches them at startup and performs `{{placeholder}}` substitution.
+Prompts are plain text files under the AI module's `Prompts/` folder, loaded and cached
+by `PromptLoader`, which performs `{{placeholder}}` substitution. Prompts are never C#
+string literals — they are content, they change independently of code, and they must be
+diffable.
 
-```
-Modules/AI/Prompts/
-├── jd-analysis.txt
-├── resume-analysis.txt
-└── matching.txt
-```
+Every prompt embeds its expected JSON schema and instructs the model to return valid JSON
+only, with no markdown fences and no surrounding prose. The schema is never left for the
+model to infer.
 
-Every prompt includes a system instruction telling the model to return valid JSON only, with no markdown fences and no explanatory text. The expected JSON schema is embedded in the prompt.
+### AI Cost Controls
 
-### OpenAI HTTP Client
-
-`OpenAIClient` (the `IOpenAIClient` implementation) uses a named `HttpClient` `"openai"` registered with a 30-second timeout and a Polly retry policy (3 attempts at 2s / 4s / 8s). On a parse failure — malformed JSON or an envelope with no message content — it throws `OpenAIParseException` with the raw response attached.
-
-```csharp
-builder.Services.AddHttpClient(OpenAIClient.HttpClientName, client =>
-{
-    client.BaseAddress = new Uri(openAiBaseUrl);   // OpenAI:BaseUrl, default https://api.openai.com/
-    client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.Authorization =
-        new AuthenticationHeaderValue("Bearer", openAiApiKey);
-})
-.AddPolicyHandler(HttpPolicyExtensions
-    .HandleTransientHttpError()
-    .WaitAndRetryAsync(new[]
-    {
-        TimeSpan.FromSeconds(2),
-        TimeSpan.FromSeconds(4),
-        TimeSpan.FromSeconds(8)
-    }));
-```
-
-Config keys: `OpenAI:ApiKey`, `OpenAI:Model` (default `gpt-4o-mini`), `OpenAI:BaseUrl`. `OpenAI:ApiKey` is validated at startup — the app refuses to start if it is absent outside the Development environment.
-
-AI calls are synchronous from the HTTP request perspective — the controller waits for the result. This keeps the implementation simple. If response times prove problematic in production, a `BackgroundService` with a polling endpoint can be introduced without changing the interface.
-
-### Cost Controls
-
-- Default model: `gpt-4o-mini` (configurable via `OpenAI__Model`).
-- Token usage logged at `Information` level on every response.
-- Rate limiting on AI endpoints: 10 requests per user per hour, enforced in Sprint 6 via ASP.NET Core's built-in `RateLimiter`.
+- A small, configurable default model.
+- Token usage and latency logged as structured properties on every call — discrete
+  Serilog properties, not interpolated strings.
+- AI results are persisted. Re-running an identical operation returns the stored result
+  and must not trigger a second call to the provider.
+- AI endpoints are rate limited per user. The more expensive an operation, the tighter
+  its limit.
 
 ---
 
-## Frontend Architecture
+## Frontend
 
-### Stack
+### Structure
 
-- **Next.js** (latest stable) with App Router
-- **TypeScript** — `strict: true`, no `any`
-- **Tailwind CSS** (latest stable) for all styling
-- **shadcn/ui** for UI primitives — do not hand-edit generated components
-- **TanStack Query v5** for server state
-- **React Hook Form + Zod** for form handling and validation
+Route groups separate public routes from authenticated ones. The authenticated group's
+layout owns the redirect guard: it reads auth state, renders a skeleton while loading to
+prevent a flash of protected content, and redirects when there is no user. Auth is
+guarded client-side; there is no Next.js middleware in the auth path.
 
-### Route Groups
+Page components stay thin — they read params, call hooks, and pass data down. Display and
+interaction logic lives in feature components. Data fetching and mutation logic lives in
+hooks, not in components.
 
-```
-app/
-├── (auth)/            ← public: login, register
-│   ├── login/
-│   └── register/
-└── (dashboard)/       ← protected: all authenticated pages
-    ├── layout.tsx     ← redirect guard lives here
-    ├── dashboard/
-    ├── resumes/
-    ├── jobs/
-    ├── matches/
-    └── applications/
-```
+### API Access
 
-The `(dashboard)/layout.tsx` handles authentication redirect. It reads `user` and `isLoading` from `useAuth()`. While `isLoading` is true it renders a skeleton to prevent flash of protected content. When `isLoading` is false and `user` is null it calls `router.replace('/login')`. This is client-side only — no Next.js middleware is used for auth in Sprint 1.
+Every HTTP call goes through the typed API client. No component calls `fetch()` directly.
+The client sends credentials on every request, so the JWT — held in an `HttpOnly` cookie
+— is attached by the browser. The frontend never reads, stores, decodes, or attaches the
+token itself.
 
-### API Client
+Auth state is server-authoritative: a single TanStack Query hook backed by the current-user
+endpoint is the only source of truth for who is signed in. Logout clears the cookie
+server-side and then clears the cached query.
 
-All HTTP calls go through `lib/api-client.ts`. No component ever calls `fetch()` directly.
+All API response types are declared in one types module and mirror the backend DTOs.
+TypeScript runs in strict mode; `any` is not acceptable.
 
-```typescript
-// lib/api-client.ts
-export async function apiClient<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}${path}`, {
-    ...options,
-    credentials: 'include',       // sends the HttpOnly access_token cookie automatically
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-  });
+### State and Forms
 
-  if (!response.ok) {
-    const error: ApiError = await response.json();
-    throw error;
-  }
+Server state is TanStack Query — `useQuery` for reads, `useMutation` with explicit cache
+invalidation for writes. Server Actions are reserved for trivial updates that need no
+loading state or invalidation; uploads and AI-triggered operations always use mutations.
 
-  return response.json() as Promise<T>;
-}
-```
+Forms use React Hook Form with Zod schemas colocated with the form component.
 
-`ApiError` is typed as `{ code: string; message: string; status: number }`. Components catch errors from `useMutation` and display them via toast.
-
-`lib/auth.ts` (with `getToken`, `setToken`, `clearToken`) is not used — the JWT is never accessible to JavaScript. Auth state is managed entirely through `useAuth()` and the server cookie.
-
-### Auth State
-
-The JWT is stored in an `HttpOnly` cookie named `access_token`, set by the backend on login and register. JavaScript cannot read this cookie — the frontend never has access to the raw token.
-
-`useAuth()` is backed by TanStack Query (`queryKey: ['auth', 'me']`). On mount it calls `GET /api/auth/me` to hydrate the current user. The hook returns `{ user: UserProfileDto | null, isLoading: boolean, logout: () => Promise<void> }`. Logout calls `POST /api/auth/logout`, which clears the cookie server-side, then removes the query from the cache and redirects to `/login`.
-
-`lib/auth-api.ts` contains `login()`, `register()`, `getCurrentUser()`, and `logout()` — the four functions that call the auth endpoints. `useAuth()` in `lib/hooks/use-auth.ts` wraps `getCurrentUser()` with TanStack Query.
-
-### Server State with TanStack Query
-
-TanStack Query manages all async server state. The pattern for every data-fetching page is:
-
-```typescript
-// Fetch
-const { data: resumes, isLoading, error } = useQuery({
-  queryKey: ['resumes'],
-  queryFn: () => apiClient<ResumeDto[]>('/api/resumes'),
-  staleTime: 30_000,
-});
-
-// Mutate
-const uploadMutation = useMutation({
-  mutationFn: (file: File) => uploadResume(file),
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ['resumes'] });
-    router.push('/resumes');
-  },
-});
-```
-
-Server Actions are used only for simple profile updates where no loading spinner or cache invalidation is needed. All AI-triggered operations and file uploads use `useMutation`.
-
-### Component Conventions
-
-- **Page components** (`app/**page.tsx`) are thin — they read URL params, call hooks, pass data down.
-- **Feature components** (`components/`) own display and interaction logic.
-- **Custom hooks** (`lib/hooks/`) encapsulate TanStack Query calls and mutation logic. No business logic lives in components directly.
-- Every async operation handles three states explicitly: loading (skeleton, not spinner for lists), error (toast or inline message), and empty (helpful prompt with a call to action).
-
-### Types
-
-All API response types are defined in `types/api.ts` and mirror the backend DTOs. They are the single source of truth for the shape of data flowing across the network. No inline type assertions against API responses.
+Every async surface handles three states explicitly: loading (a skeleton for lists, not a
+spinner), error, and empty (a useful prompt with an action, not a blank panel).
 
 ---
 
-## Testing Strategy
+## Testing
 
-### Unit Tests (xUnit + Moq + FluentAssertions)
+**Unit tests** target the Application layer and pure helpers: service business logic,
+ownership checks, validators, result mapping, prompt loading and substitution, document
+text extraction, and client retry and parse-failure behaviour.
 
-Target the Application layer. Test service methods in isolation with mocked dependencies.
+**Integration tests** belong at the endpoint level and should use `WebApplicationFactory`
+against a real test database, covering per endpoint: the happy path, auth failure,
+validation failure, and not-found — including the case where a resource belongs to another
+user. Controllers are covered this way rather than by mocked unit tests.
 
-What to unit test:
-- Service business logic (validation, ownership checks, state transitions)
-- `ResultMapper` — verify each error code maps to the correct HTTP status
-- `PromptLoader` — verify placeholder substitution and error on missing key
-- `RegisterRequestValidator` — valid and invalid inputs
-- `ResumeTextExtractor` (Sprint 2) — valid PDF, valid DOCX, corrupt file returns null
+Adapters with real side effects — file storage in particular — are tested against the real
+dependency rather than a mock. Prefer a real or in-memory database over mocking
+`AppDbContext`.
 
-What not to unit test with mocks:
-- Controllers — covered by integration tests
-- EF configurations — covered by migration inspection
-- `LocalFileStorageService` — covered by file system unit tests
+Any test that calls a genuinely external service (the AI provider, cloud storage) must be
+attributed with a category so it can be excluded from the standard run. Use the category
+in the filter when such tests exist:
 
-### Service / Storage Tests
-
-`LocalFileStorageService` and `AzureBlobStorageService` should be tested with real file system or real Blob Storage respectively. Mark Azure-dependent tests with `[Category("AzureIntegration")]` and exclude them from the standard CI run.
-
-### Integration Tests (WebApplicationFactory)
-
-Each module's endpoints are covered by integration tests using `WebApplicationFactory<Program>` with a real test database. These tests exercise the full stack from HTTP request to database and back.
-
-Cover per endpoint:
-- Happy path (correct status code and response shape)
-- Auth failure (missing or invalid cookie → 401)
-- Validation failure (invalid input → 422)
-- Not found (wrong id or wrong user → 404)
-
-Mark tests that call real external services (OpenAI, Azure Blob) with `[Category("ManualOnly")]` — they are run manually, not in CI.
-
-### CI Test Exclusions
-
-```csharp
+```bash
 dotnet test --filter "Category!=ManualOnly&Category!=AIIntegration&Category!=AzureIntegration"
 ```
 
 ---
 
-## Extension Guidelines
+## Production Requirements
 
-### Adding a New Module
+These are requirements for a production-ready deployment, not a schedule.
 
-Follow these steps in order. Do not create the module folder until the sprint begins.
+**Topology.** App Service, a managed PostgreSQL instance, and a storage container per
+environment, with containers isolated per environment so data cannot cross between them.
+A staging slot enables blue/green swap. HTTPS is enforced and HTTP redirected.
 
-1. **Create the folder structure** with only the files needed for the current task:
-   ```
-   Modules/{ModuleName}/
-   ├── Domain/
-   │   └── {Entity}.cs
-   ├── Application/
-   │   ├── {Module}Service.cs
-   │   ├── {Module}Dtos.cs
-   │   └── {Module}Validator.cs     ← only if the module has validated input
-   ├── Infrastructure/
-   │   └── {Entity}Configuration.cs
-   └── Controllers/
-       └── {Module}Controller.cs
-   ```
+**Health.** A liveness endpoint that reports only that the process is up, and a readiness
+endpoint that checks reachability of PostgreSQL, storage, and the AI provider, returning
+`503` with per-dependency status when any check fails.
 
-2. **Add the entity** to `AppDbContext` as a new `DbSet<{Entity}>`.
+**Observability.** Serilog ships to Application Insights. Every request is logged with
+method, path, status, and duration. Every AI call is logged as a dependency trace with
+latency and token count.
 
-3. **Add an EF migration** covering only the new tables:
-   ```bash
-   dotnet ef migrations add Add{ModuleName}
-   ```
-
-4. **Register services** in `Program.cs`:
-   ```csharp
-   builder.Services.AddScoped<{Module}Service>();
-   ```
-   No module registration method is needed — controllers are picked up automatically by `MapControllers()`, and EF configurations are picked up by `ApplyConfigurationsFromAssembly`.
-
-5. **Write the service** in Application, injecting `AppDbContext` directly.
-
-6. **Write the controller** in Controllers, calling the service and mapping results via `ResultMapper`.
-
-7. **Add frontend** — create the page route, a TanStack Query hook, and any shared components needed.
-
-8. **Write tests** — unit tests for the service, integration tests for the controller endpoints.
-
-### Adding a New API Error Code
-
-1. Add the error code string as a constant or inline string in the service that returns it.
-2. Add a new case to the `switch` in `ResultMapper.ToActionResult`.
-3. Document the code in this file under the module's section.
-
-### Adding a New AI Capability
-
-1. Create a higher-level service (for example, `ResumeAnalysisService`) that injects `IOpenAIClient`.
-2. Create the prompt file in `Modules/AI/Prompts/` and load it via `PromptLoader`.
-3. In the service, render the prompt and call `IOpenAIClient.CompleteAsync`, then parse the returned content into a typed result.
-
-Do not add agent orchestration, tool calling, or multi-step pipelines. A single structured prompt per operation is the pattern for this MVP.
-
-### Adding a New Prompt
-
-Prompts follow this convention:
-
-```
-You are an expert technical recruiter.
-
-Given the following job description:
-{{job_description}}
-
-Extract and return only a JSON object with this schema:
-{
-  "technicalSkills": string[],
-  "softSkills": string[],
-  "experienceLevel": "junior" | "mid" | "senior",
-  "roleType": string
-}
-
-Respond only with valid JSON. Do not include markdown, explanation, or any text outside the JSON object.
-```
-
-The system prompt instruction to return JSON only must appear in every prompt. The schema must be embedded in the prompt — do not rely on the model to infer it.
+**Security.** CORS locked to the known frontend origin via configuration.
+`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and HSTS set on responses.
+All secrets supplied as environment variables.
 
 ---
 
-*Last updated: Sprint 2 (S2-02, S2-03) — resume text extraction added (PdfPig / DocumentFormat.OpenXml); AI module introduced with `IOpenAIClient` as the low-level OpenAI transport seam, `OpenAIClient`, `PromptLoader`, and `OpenAIParseException`. `ResumeAnalysisService` and `JobDescriptionService` remain planned, not yet implemented.*
-*Update this document when a new module is added, a layer responsibility changes, or an architectural decision is revised.*
+## Extending the System
+
+**A new module.** Create only the layers the task needs. Add the entity's `DbSet` to
+`AppDbContext`, add a migration covering only the new tables, register the service in
+`Program.cs`, then build outward: domain → application → infrastructure → controller →
+frontend client → hook → UI → tests. Controllers and EF configurations need no
+registration.
+
+**A new business error code.** Return it from the service in a `Result<T>`, then add the
+single mapping in `ResultMapper`. Nowhere else.
+
+**A new AI capability.** Add a prompt file with its schema embedded, add an Application
+service that injects `IOpenAIClient`, render the prompt, make one call, parse the result
+into a typed shape. Persist the result so a repeat request does not re-call the provider.
+
+**A new dependency.** Not without explicit approval — see [../CLAUDE.md](../CLAUDE.md).

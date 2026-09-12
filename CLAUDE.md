@@ -1,136 +1,132 @@
-﻿# Claude Instructions — AI Job Coach
+# Claude Instructions — AI Job Coach
 
-## Read First
+Repository-specific rules and boundaries. Generic workflow — how to brainstorm, plan,
+delegate, verify, and review — comes from Orca and Superpowers and is not duplicated here.
 
-Before making code changes, read:
+## Orientation
 
-* `PROJECT_CONTEXT.md`
+Establish current state by inspecting the repository, not by reading documentation. The
+code is the only accurate record of what exists.
 
-Treat `PROJECT_CONTEXT.md` as the primary source of truth for:
+Two documents carry durable knowledge worth loading:
 
-* current sprint scope
-* architecture rules
-* module boundaries
-* backend/frontend conventions
-* current implementation priorities
-* prohibited patterns
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system shape, module and layer
+  conventions, integration seams. Read the relevant section when a task crosses a layer
+  or module boundary, or introduces a new seam.
+- [docs/DECISIONS.md](docs/DECISIONS.md) — why the constraints below exist, and what
+  would justify revisiting them. Read when a task presents a trade-off, or when a rule
+  here seems wrong for the task at hand.
 
-Read these additional docs only when relevant:
+Load a section, not a document. Workers should receive the minimum context their task
+requires.
 
-* `docs/ARCHITECTURE.md` — when changing project structure, module structure, layers, dependency direction, or integration boundaries
-* `docs/DECISIONS.md` — when a ticket involves technical trade-offs or competing implementation options
-* `docs/ROADMAP.md` — when a ticket affects sprint planning, feature sequencing, or future scope
-* `docs/AI_WORKFLOW.md` — when deciding how to classify, plan, implement, review, and verify a coding task
+## Scope Control
 
-## Working Rules
+- Build only what the current task requires. Do not add scope.
+- Prefer small, focused changes and vertical slices over broad rewrites.
+- Do not mix unrelated refactoring into feature work.
+- Do not create a module folder, table, endpoint, or component before a task requires it.
+  No placeholder folders, no stub endpoints, no speculative abstractions.
+- If a task is taking longer than expected, cut scope within it — deliver the working
+  core and surface what was deferred. Do not silently narrow or widen the deliverable.
+- A new idea that arrives mid-task does not get built in that task.
+- No infrastructure component is added without a concrete, current need.
+- Preserve existing conventions. Match the surrounding code.
 
-* Work on one ticket at a time.
-* Implement only the requested ticket scope.
-* Prefer small, focused changes over broad rewrites.
-* Preserve existing project conventions.
-* Build vertical slices when the ticket requires a feature.
-* Do not scaffold future modules before their sprint.
-* Do not create empty placeholder folders.
-* Ask for confirmation before changing architecture, database schema, authentication, deployment, or shared conventions.
+## Architectural Guardrails
 
-## Backend Rules
+These are the durable constraints of this codebase. Each exists for a documented reason —
+see [docs/DECISIONS.md](docs/DECISIONS.md) before proposing an exception.
 
-* Use ASP.NET Core Web API Controllers.
-* Use `ControllerBase` for API controllers.
-* Keep Controllers thin: bind request, extract user/claims, call Application service, return response.
-* Put business workflow in Application services.
-* Put external integrations in Infrastructure.
-* Keep Domain entities free of HTTP types, EF attributes, and infrastructure dependencies.
-* Use one shared `AppDbContext`.
-* Application services may inject `AppDbContext` directly.
-* Use EF Core entity configurations in Infrastructure.
-* Use manual mapping.
-* Keep expected failures explicit through service results or controller responses.
-* Let `GlobalExceptionHandler` handle unexpected failures.
+**Do not introduce:** the repository pattern · AutoMapper or any convention-based mapper ·
+MediatR, CQRS, or command/handler pipelines · microservices · message queues or background
+job infrastructure · vector databases · AI agent frameworks (Semantic Kernel, LangChain,
+AutoGen) · a secrets manager.
 
-## Frontend Rules
+**Do not violate:** one `AppDbContext`, injected directly into Application services ·
+controllers stay thin, with business logic in Application services · domain entities free
+of HTTP types, EF attributes, and infrastructure dependencies · external integrations
+confined to Infrastructure · manual mapping only · expected failures returned as
+`Result<T>`, unexpected failures left to `GlobalExceptionHandler` · one structured
+prompt-response call per AI capability · no real secrets in committed files.
 
-* Use the latest stable frontend stack defined in `PROJECT_CONTEXT.md`.
-* Use TypeScript strict mode.
-* Use typed API client wrappers instead of raw `fetch()` inside components.
-* Use TanStack Query for server state.
-* Use React Hook Form and Zod for forms.
-* Keep page components thin.
-* Move reusable logic into components, hooks, or API utilities.
-* Handle loading, error, and empty states for async UI.
+## Escalation
 
-## MVP Constraints
+Stop and get explicit approval before:
 
-* Do not introduce repository pattern.
-* Do not introduce AutoMapper.
-* Do not introduce MediatR or CQRS.
-* Do not introduce microservices.
-* Do not introduce message queues.
-* Do not introduce vector databases.
-* Do not introduce agent frameworks.
-* Do not scaffold Mock Interview during MVP.
-* Do not create Azure Blob implementation before the sprint that requires it.
-* Do not commit secrets, local environment files, uploaded files, build outputs, or generated artifacts.
+- changing architecture, module boundaries, or layer responsibilities
+- changing the database schema or adding a migration
+- changing authentication or session behaviour
+- changing an existing API response contract
+- adding a new dependency
+- moving files across layers or modules
+- refactoring code unrelated to the task
 
-## Before Editing Code
+When blocked, do not guess. State what is known, what is unknown, the options, a
+recommendation, and the risk of each.
 
-For every ticket, first respond with:
+## Database Changes
 
-1. Understanding of the ticket
-2. Relevant files to inspect
-3. Implementation plan
-4. Files expected to change
-5. Questions, risks, or assumptions
-
-Wait for approval before making broad structural changes.
-
-## After Editing Code
-
-Run the relevant checks.
-
-For backend changes:
-
-```bash
-dotnet build
-dotnet test
-```
-
-For frontend changes:
-
-```bash
-npm run build
-npm run lint
-```
-
-For database schema changes:
+Schema changes need approval before the migration is generated. When proposing one,
+state why the change is required, the entity and its relationships, and the indexes and
+constraints. Inspect the generated migration before applying it. A migration covers only
+the tables the current task introduces.
 
 ```bash
 dotnet ef migrations add <MigrationName>
 dotnet ef database update
 ```
 
-Only run EF migration commands when the ticket explicitly requires a schema change.
+## Verification
 
-## Git Rules
+Run the relevant checks and report their actual output. Do not claim work is complete on
+the basis that code was written.
 
-* Do not commit unless explicitly asked.
-* Use conventional commit messages when asked to commit.
-* Keep commits focused on one ticket.
-* Do not include unrelated formatting changes.
-* Do not include generated local files, secrets, uploads, build artifacts, or environment-specific files.
+```bash
+dotnet build && dotnet test     # backend
+npm run build && npm run lint   # frontend
+```
 
-## Communication Style
+A change is not done until: the checks pass or skipped checks are explained; tests cover
+new service behaviour; new failure modes are mapped in `ResultMapper`; ownership checks
+guard every path that reads user data; `CancellationToken` is threaded through async
+service calls; and no guardrail above was violated.
 
-When starting a ticket, provide:
+If a check was not run, say so and say why.
 
-1. Ticket understanding
-2. Short implementation plan
-3. Files to inspect or modify
-4. Risks or questions
+## Anti-Patterns
 
-When finishing a ticket, provide:
+Specific to this codebase:
 
-1. What changed
-2. How it was tested
-3. Any trade-offs
-4. Follow-up tasks, if any
+- Business logic in controllers, or data access outside Application services.
+- Raw `fetch()` in a component instead of the typed API client.
+- Reading, storing, or decoding the JWT on the frontend — it is an `HttpOnly` cookie and
+  auth state is server-authoritative.
+- Treating every auth failure as logged-out, or trusting stale TanStack Query data after
+  a 401.
+- An async surface that does not handle loading, error, and empty states.
+- Adding an abstraction before the duplication it removes actually exists.
+- Generic or reusable components created before a second use case exists.
+- Hardcoding prompt text in C# instead of a prompt file.
+- Re-calling the AI provider for a result already persisted.
+- Extending scope because adjacent code looked improvable.
+
+## Out of Scope
+
+Not built, and not scaffolded, until a task explicitly requires it:
+
+**Product** — OAuth login, payments and subscription tiers, multi-tenancy, email
+notifications, team or cohort views, saved search alerts, standalone mock interview.
+
+**Engineering** — background job queues, `pgvector` or semantic search, per-environment
+feature flags, A/B testing of prompt variants, a secrets manager, full CSRF token
+implementation (`SameSite=Lax` is the accepted interim position), refresh tokens.
+
+## Git
+
+- Do not commit unless explicitly asked.
+- Conventional commits, scoped to one task: `feat(resumes): add text extraction`.
+- Branch from `develop`. `main` is production.
+- Never commit secrets, local environment files, uploads, build outputs, or generated
+  artifacts.
+- Include migration files only when the task required a schema change.
