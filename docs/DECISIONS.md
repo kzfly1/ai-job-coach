@@ -2,6 +2,9 @@
 
 Lightweight architectural decision records for the AI Job Coach MVP. Each entry documents a real engineering trade-off. Use this document to recall the reasoning behind key decisions and to articulate them clearly in technical interviews.
 
+These records explain *why*. For what the resulting system looks like, see
+[ARCHITECTURE.md](ARCHITECTURE.md). No record here schedules work or tracks progress.
+
 ---
 
 ## Decision Record Format
@@ -152,91 +155,69 @@ Each record uses five fields:
 
 **Context:** The two options for client-side JWT storage are `localStorage` and `httpOnly` cookies. `httpOnly` cookies are inaccessible to JavaScript and therefore immune to XSS theft. `localStorage` is accessible to any JavaScript running on the page and is vulnerable to XSS attacks that steal the token.
 
-**Decision:** ~~Store the JWT in `localStorage` for the MVP.~~ This decision was reversed during Sprint 1. See ADR-021.
+**Decision:** ~~Store the JWT in `localStorage` for the MVP.~~ This decision was reversed before any release. See ADR-021.
 
-**Consequences:** The original decision was made for implementation simplicity. It was reversed once it became clear that HttpOnly cookie auth could be implemented within Sprint 1 scope without significant added complexity, and that doing so removed a known security debt before any users touched the product.
+**Consequences:** The original decision was made for implementation simplicity. It was reversed once it became clear that HttpOnly cookie auth could be implemented without significant added complexity, and that doing so removed a known security debt before any users touched the product.
 
 **Revisit When:** N/A — superseded.
 
 ---
 
-### ADR-021: Use HttpOnly Cookie Authentication
+### ADR-011: Use Local File Storage in Development
 
 **Status:** Accepted
 
-**Context:** The original plan stored the JWT in `localStorage` and injected it as an `Authorization: Bearer` header. This approach is straightforward but exposes the token to XSS: any JavaScript running on the page can read `localStorage`. The alternative — an `HttpOnly` cookie — is invisible to JavaScript entirely. The cookie is set and cleared by the server, and the browser sends it automatically with every credentialed request.
+**Context:** Resume file uploads require a storage backend. Cloud object storage is the production target, but depending on it during local development means an account, container provisioning, connection string management, and integration testing against a cloud service before any product feature is usable.
 
-**Decision:** The backend sets the JWT in an `HttpOnly` cookie named `access_token` on successful login and register. The frontend never reads, stores, or decodes the token. `apiClient` uses `credentials: 'include'` on every request. `GET /api/auth/me` is the sole source of truth for the current user — `useAuth()` calls it via TanStack Query (`queryKey: ['auth', 'me']`) to hydrate user state. Logout calls `POST /api/auth/logout`, which clears the cookie server-side.
+**Decision:** `LocalFileStorageService` saves files to a configured local directory and is the Development implementation. All file storage is accessed through an `IFileStorageService` interface so the implementation can be swapped without touching service or controller code.
 
-**Consequences:** The JWT is never accessible to JavaScript, eliminating the XSS token-theft vector. The frontend is simpler — no token storage, no manual header injection, no JWT decoding. Auth state is always server-authoritative via `/api/auth/me`. The trade-offs are: (1) cookie auth introduces CSRF considerations — mitigated by `SameSite=Lax` for the MVP, with full CSRF hardening deferred to a pre-launch security ticket; (2) local development requires consistent protocol use (HTTP on both frontend and backend, or HTTPS on both) to avoid browser cookie/CORS issues from mixed schemes; (3) Bearer token support via the `Authorization` header may remain available for Postman and development tooling, but the frontend must not use it.
+**Consequences:** Local development has zero cloud dependencies — the API runs entirely against Docker Compose. The interface abstraction means introducing cloud storage is a new `Infrastructure/` class and a DI registration change. The trade-off is that local files are lost when the container is recreated and are not suitable for any deployed environment.
 
-**Cookie configuration:**
-- Name: `access_token`
-- `HttpOnly: true`
-- `Secure: true` in non-Development; `false` in Development
-- `SameSite: Lax`
-- `Path: /`
-- Expiry matches JWT expiry (24 hours)
-
-**Deferred:** Refresh tokens (post-MVP). Full CSRF token implementation (pre-launch security hardening ticket). `SameSite=Lax` is acceptable for the current MVP setup.
-
-**Revisit When:** Full CSRF protection is needed before public launch. Refresh tokens are needed for longer session lifetimes.
+**Revisit When:** N/A — local storage is a Development-only implementation by design. See ADR-012 for the deployed case.
 
 ---
 
-### ADR-011: Use Local File Storage in Sprint 1
+### ADR-012: Use Azure Blob Storage for Deployed Environments
 
-**Status:** Accepted
-
-**Context:** Resume file uploads require a storage backend. Azure Blob Storage is the production target, but setting it up in Sprint 1 would require an Azure account, container provisioning, connection string management, and integration testing against a cloud service before any product features exist.
-
-**Decision:** Sprint 1 uses a `LocalFileStorageService` that saves files to a configured local directory. All file storage is accessed through an `IFileStorageService` interface so the implementation can be swapped without touching service or controller code.
-
-**Consequences:** Zero cloud dependencies in Sprint 1 — the API runs entirely with Docker Compose. The interface abstraction means Sprint 2's Azure Blob introduction is a new `Infrastructure/` class and a one-line DI registration change. The trade-off is that local files are lost if the container restarts and are not suitable for production.
-
-**Revisit When:** N/A — local storage is replaced by design in Sprint 2 before any staging deployment.
-
----
-
-### ADR-012: Replace Local File Storage with Azure Blob Storage in Sprint 2
-
-**Status:** Accepted
+**Status:** Accepted — amended
 
 **Context:** Local file storage is not viable for staging or production. Files stored on an App Service instance are lost on restart or when the app is scaled. Azure Blob Storage provides durable, scalable object storage with per-environment container isolation.
 
-**Decision:** `AzureBlobStorageService` implements `IFileStorageService` and is registered in non-Development environments. Sprint 1's `LocalFileStorageService` remains active in Development. The swap is a DI registration conditional — no service or controller code changes.
+**Decision:** `AzureBlobStorageService` implements `IFileStorageService` and is registered in non-Development environments; `LocalFileStorageService` remains active in Development. The swap is a DI registration conditional — no service or controller code changes.
 
-**Consequences:** Cloud storage is introduced before the first staging deployment, which is the correct order. Separate containers per environment (`resumes-dev`, `resumes-staging`, `resumes-prod`) prevent cross-environment data contamination. The trade-off is an Azure dependency from Sprint 2 onward, requiring the developer to manage Blob Storage credentials.
+**Consequences:** Cloud storage is in place before the first deployment, which is the correct order. Separate containers per environment prevent cross-environment data contamination. The trade-off is a cloud dependency in every deployed environment, requiring credential management.
+
+**Amendment:** This decision was originally scheduled into a specific sprint. The schedule is withdrawn — the decision is *what* deployed environments use, not *when* it is built. It is a prerequisite of deploying, not of any particular feature.
 
 **Revisit When:** A different cloud provider or self-hosted object storage (for example, MinIO) is preferred — the `IFileStorageService` interface supports swapping the implementation.
 
 ---
 
-### ADR-013: Keep `content_text` Nullable in Sprint 1
+### ADR-013: Keep `content_text` Nullable
 
 **Status:** Accepted
 
-**Context:** Resume text extraction (PDF, DOCX parsing) is a non-trivial feature that introduces library dependencies and failure modes. Bundling it with the initial upload endpoint in Sprint 1 would add scope and risk to a ticket that is already establishing the file storage pattern, the multipart upload flow, and the DB schema.
+**Context:** Resume text extraction has real failure modes — scanned PDFs, encrypted files, malformed DOCX. A schema that assumes text is always present would force a choice between rejecting uploads that cannot be parsed and storing an empty string that is indistinguishable from a genuinely empty document.
 
-**Decision:** The `resumes.content_text` column exists in the Sprint 1 migration as a nullable `TEXT` column. All Sprint 1 uploads set it to `NULL`. Extraction is added in Sprint 2 as an incremental change to `ResumeService`.
+**Decision:** `resumes.content_text` is a nullable `TEXT` column. `NULL` means "no text is available for this resume", and is a valid, expected state.
 
-**Consequences:** Sprint 1 upload is simpler to implement and test. The nullable column is a truthful representation of the data state — text may not be available for a given resume. Sprint 2's extraction feature only needs to update `content_text` on existing rows; no schema migration is required. The trade-off is that Sprint 1 resumes cannot be analysed until Sprint 2 runs extraction.
+**Consequences:** The column is a truthful representation of the data. Upload and extraction stay separable concerns, and a resume whose text could not be extracted is still a valid record. The cost is that every consumer of `content_text` must handle the null case explicitly — which is the correct burden, since the condition is real.
 
-**Revisit When:** N/A — this is a sprint boundary decision that resolves itself in Sprint 2.
+**Revisit When:** Extraction becomes reliable enough that a null is always an error rather than an expected outcome — which would require OCR. See ADR-014.
 
 ---
 
-### ADR-014: Add Text Extraction in Sprint 2
+### ADR-014: Extraction Failure Must Not Fail the Upload
 
 **Status:** Accepted
 
-**Context:** Resume analysis requires the resume text as input to the AI. Text extraction from PDF and DOCX files uses different libraries (`PdfPig` and `DocumentFormat.OpenXml`), both of which have their own failure modes (scanned PDFs, encrypted files, malformed DOCX). Extraction failure should not prevent upload.
+**Context:** Resume analysis requires resume text as input. Extraction from PDF and DOCX uses different libraries (`PdfPig` and `DocumentFormat.OpenXml`), each with its own failure modes. The question is what happens to the upload when extraction fails.
 
-**Decision:** Sprint 2 adds `ResumeTextExtractor` to the Resumes module. On upload, extraction is attempted and the result stored in `content_text`. Extraction failure sets `content_text` to `NULL`, logs a warning, and does not fail the upload. AI analysis endpoints return `422` if `content_text` is null.
+**Decision:** Extraction is attempted during upload and its result stored in `content_text`. Failure sets `content_text` to `NULL`, logs a warning, and returns a successful upload. Analysis endpoints reject a resume with no text with a distinct business error rather than a generic failure.
 
-**Consequences:** The extraction concern is cleanly separated from the storage concern. A resume can always be uploaded; analysis is conditionally available. The failure mode is surfaced clearly to the user rather than silently degrading. The trade-off is that scanned PDFs (which require OCR) will not be analysable in the MVP.
+**Consequences:** The extraction concern is cleanly separated from the storage concern. A resume can always be uploaded; analysis is conditionally available and the reason is surfaced to the user rather than degrading silently. The trade-off is that scanned PDFs, which require OCR, cannot be analysed.
 
-**Revisit When:** A meaningful proportion of users upload scanned PDFs and cannot use the analysis feature — at that point, OCR (Azure Document Intelligence or Tesseract) should be evaluated.
+**Revisit When:** A meaningful proportion of users upload scanned PDFs and cannot use analysis — at that point OCR (Azure Document Intelligence or Tesseract) should be evaluated.
 
 ---
 
@@ -268,17 +249,19 @@ Each record uses five fields:
 
 ---
 
-### ADR-017: Keep Mock Interview Out of the MVP
+### ADR-017: Bound the Interview Feature to Preparation, Not Simulation
 
-**Status:** Accepted
+**Status:** Accepted — amended
 
-**Context:** Mock interview was included in the original product spec. It requires generating interview questions from a JD and resume, accepting free-text answers, and returning AI-generated feedback — all stateful, multi-step interactions with distinct UI requirements.
+**Context:** "Interview support" can mean very different products. A mock interview — generating questions, accepting free-text answers, returning AI feedback — is a stateful, multi-turn interaction with its own UI surface and evaluation problem. Interview *preparation* — a company brief and a role-specific question bank — is a small number of single-turn generations. Company research can likewise expand without limit if it is treated as its own product.
 
-**Decision:** Mock interview is post-MVP. No interview-related database tables, API endpoints, prompt files, or UI are created. The AI interface defines exactly three methods: `AnalyzeJobDescriptionAsync`, `AnalyzeResumeAsync`, and `MatchResumeToJDAsync`.
+**Decision:** The interview feature is preparation only: a lightweight company brief plus a question bank and preparation notes, each produced by a single structured generation. Mock interview simulation is out of scope. Company intelligence is a sub-feature that feeds question generation — not a standalone research product — and does not call external company-data APIs.
 
-**Consequences:** Sprint 4 and the end of Sprint 3 recover approximately two weeks that would have been spent on interview scaffolding. Those weeks are redirected to job tracking, dashboard, and production hardening — all of which deliver more portfolio signal than a partially-built interview feature. The core value proposition (resume analysis + matching) is delivered completely rather than thinly across more features.
+**Consequences:** The interview surface stays proportionate to its value, and the core loop (resume analysis and matching) is delivered completely rather than thinly across more features. Nothing stateful or multi-turn enters the AI layer, which keeps ADR-015's single-call rule intact. The trade-off is that users get preparation material rather than practice.
 
-**Revisit When:** The core MVP is shipped, validated, and the matching + tracking features are demonstrated to work reliably in production.
+**Amendment:** This record originally asserted a fixed three-method AI interface and a specific sprint timeline. Both are withdrawn. The implemented AI seam is a low-level transport client (see ADR-015 and `docs/ARCHITECTURE.md`), and scheduling is not the business of an architectural decision. The scope boundary above is the durable part.
+
+**Revisit When:** The core loop is shipped and validated, and practice — rather than preparation — is the constraint users actually report.
 
 ---
 
@@ -310,17 +293,45 @@ Each record uses five fields:
 
 ---
 
-### ADR-020: Defer Advanced Production Hardening to Later Sprints
+### ADR-020: Weave Production Hardening Into Feature Work
+
+**Status:** Accepted — supersedes an earlier schedule-based version
+
+**Context:** Production concerns — timeouts, retries, rate limiting, structured logging, config validation — can be handled two ways: deferred into a dedicated hardening phase, or built alongside the feature that needs them. Deferral is tempting because it keeps feature work moving, but it accumulates a body of work whose scope is only discovered at the end, and it leaves every feature unprotected in the meantime.
+
+**Decision:** Production-readiness work that belongs to a feature ships with that feature. When an integration is introduced, its timeout, retry policy, failure mapping, and structured logging are part of the same change. When an expensive endpoint is introduced, its rate limit is part of the same change. Configuration an environment cannot run without is validated at startup by the change that introduces it.
+
+Infrastructure that is not attached to any single feature — deployment topology, CI/CD pipelines, observability wiring, TLS, security headers — is a prerequisite of deploying rather than of any feature, and is defined as a requirement rather than scheduled against feature work. Those requirements live in `docs/ARCHITECTURE.md`.
+
+**Consequences:** No feature reaches a deployed environment in an unhardened state, and there is no end-of-project hardening backlog of unknown size. The cost is that every feature change is slightly larger than its happy path. The trade-off is deliberate: a timeout added with the integration is a line of configuration, while a timeout added six features later is an audit.
+
+**Amendment:** This record originally expressed the same intent as a fixed sprint schedule that no longer exists. The schedule is withdrawn; the principle is what was always durable.
+
+**Revisit When:** A hardening concern is genuinely cross-cutting and cannot be attached to any single feature — at which point it belongs in the production requirements rather than in a feature change.
+
+---
+
+### ADR-021: Use HttpOnly Cookie Authentication
 
 **Status:** Accepted
 
-**Context:** Production-grade observability (Application Insights, structured telemetry, alerts), security hardening (rate limiting, security headers, CORS locking), CI/CD pipelines, and health checks all take real time to implement correctly. Doing all of this in Sprint 1 would mean shipping no product features.
+**Context:** The original plan stored the JWT in `localStorage` and injected it as an `Authorization: Bearer` header. This approach is straightforward but exposes the token to XSS: any JavaScript running on the page can read `localStorage`. The alternative — an `HttpOnly` cookie — is invisible to JavaScript entirely. The cookie is set and cleared by the server, and the browser sends it automatically with every credentialed request.
 
-**Decision:** Sprints 1–4 focus on product features. Sprint 5 delivers Azure deployment and CI/CD. Sprint 6 delivers observability, security headers, rate limiting, health checks, and production sign-off. Each production engineering concern is a first-class sprint deliverable, not an afterthought.
+**Decision:** The backend sets the JWT in an `HttpOnly` cookie named `access_token` on successful login and register. The frontend never reads, stores, or decodes the token. `apiClient` uses `credentials: 'include'` on every request. `GET /api/auth/me` is the sole source of truth for the current user — `useAuth()` calls it via TanStack Query (`queryKey: ['auth', 'me']`) to hydrate user state. Logout calls `POST /api/auth/logout`, which clears the cookie server-side.
 
-**Consequences:** The MVP reaches a feature-complete state by Sprint 4 and a production-ready state by Sprint 6. Separating product sprints from infrastructure sprints makes each sprint's goal clear and achievable. The trade-off is that the staging environment is not fully hardened until Sprint 6 — acceptable given there are no real users at that point. Treating production readiness as dedicated sprint work also makes it a more credible portfolio demonstration than if it were crammed into existing tickets.
+**Consequences:** The JWT is never accessible to JavaScript, eliminating the XSS token-theft vector. The frontend is simpler — no token storage, no manual header injection, no JWT decoding. Auth state is always server-authoritative via `/api/auth/me`. The trade-offs are: (1) cookie auth introduces CSRF considerations — mitigated by `SameSite=Lax` for the MVP, with full CSRF hardening required before public launch; (2) local development requires consistent protocol use (HTTP on both frontend and backend, or HTTPS on both) to avoid browser cookie/CORS issues from mixed schemes; (3) Bearer token support via the `Authorization` header may remain available for Postman and development tooling, but the frontend must not use it.
 
-**Revisit When:** A specific security or reliability concern is identified during Sprint 1–4 that cannot wait — for example, a dependency with a critical CVE that CI would have caught.
+**Cookie configuration:**
+- Name: `access_token`
+- `HttpOnly: true`
+- `Secure: true` in non-Development; `false` in Development
+- `SameSite: Lax`
+- `Path: /`
+- Expiry matches JWT expiry (24 hours)
+
+**Deferred:** Refresh tokens (post-MVP). Full CSRF token implementation (required before public launch). `SameSite=Lax` is acceptable for the current MVP setup.
+
+**Revisit When:** Full CSRF protection is needed before public launch. Refresh tokens are needed for longer session lifetimes.
 
 ---
 
@@ -337,12 +348,14 @@ The following conditions should prompt a review of one or more decisions above:
 | Scanned PDF uploads become a common user complaint | ADR-014 |
 | Prompt iteration speed blocks feature development | ADR-016 |
 | An AI feature requires multi-step reasoning or retrieval | ADR-015 |
-| Mock interview is prioritised as the next product feature | ADR-017 |
+| Interview practice, not preparation, becomes the reported constraint | ADR-017 |
 | Full CSRF protection is needed before public launch | ADR-021 |
 | Refresh tokens are needed for longer session lifetimes | ADR-021 |
 | Manual secret rotation causes an incident | ADR-019 |
+| A hardening concern cannot be attached to any single feature | ADR-020 |
 
 ---
 
-*Last updated: Sprint 1 — ADR-010 superseded; ADR-021 added for HttpOnly cookie auth decision.*
-*Add a new ADR when a significant architectural or product decision is made. Do not delete superseded ADRs — update their status to "Superseded" and reference the replacement.*
+*Add a new ADR when a significant architectural decision is made. Do not delete
+superseded or amended ADRs — update their status and reference what replaced them.
+Record decisions and their reasoning here; record implementation state nowhere.*
