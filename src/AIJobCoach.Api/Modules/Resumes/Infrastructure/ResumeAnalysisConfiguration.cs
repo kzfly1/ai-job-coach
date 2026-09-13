@@ -12,6 +12,7 @@ public sealed class ResumeAnalysisConfiguration : IEntityTypeConfiguration<Resum
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("id");
         builder.Property(x => x.ResumeId).HasColumnName("resume_id").IsRequired();
+        builder.Property(x => x.YearsOfExperience).HasColumnName("years_of_experience");
         builder.Property(x => x.Summary).HasColumnName("summary").HasColumnType("text");
         builder.Property(x => x.CareerLevel).HasColumnName("career_level").HasColumnType("text");
         builder.Property(x => x.ProgrammingLanguages)

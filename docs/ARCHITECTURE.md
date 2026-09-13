@@ -196,7 +196,9 @@ model to infer.
 - Token usage and latency logged as structured properties on every call — discrete
   Serilog properties, not interpolated strings.
 - AI results are persisted. Re-running an identical operation returns the stored result
-  and must not trigger a second call to the provider.
+  and must not trigger a second call to the provider. Where a capability genuinely needs
+  to re-run — a user rejecting a profile as wrong — it takes an explicit `?force=true`
+  query parameter, and that is the only path that spends a second call.
 - AI endpoints are rate limited per user. The more expensive an operation, the tighter
   its limit.
 

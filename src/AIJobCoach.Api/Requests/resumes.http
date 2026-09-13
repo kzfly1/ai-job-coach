@@ -1,0 +1,32 @@
+@baseUrl = http://localhost:5001
+
+# Log in via auth.http first — the access_token cookie authenticates these requests.
+# Replace the ids below with real resume ids from the list call.
+@resumeId = paste-resume-id-here
+@unanalysedResumeId = paste-resume-id-here
+@otherUsersResumeId = paste-resume-id-here
+@noTextResumeId = paste-resume-id-here
+
+### List resumes
+GET {{baseUrl}}/api/resumes
+
+### Analyse a resume — first call performs the AI analysis
+POST {{baseUrl}}/api/resumes/{{resumeId}}/analyse
+
+### Analyse again — returns the stored profile, no provider call
+POST {{baseUrl}}/api/resumes/{{resumeId}}/analyse
+
+### Force re-analysis — spends a fresh provider call, updates the row in place
+POST {{baseUrl}}/api/resumes/{{resumeId}}/analyse?force=true
+
+### Get the stored Developer Profile
+GET {{baseUrl}}/api/resumes/{{resumeId}}/analysis
+
+### Analysis for a resume that has never been analysed -> 404 ANALYSIS_NOT_FOUND
+GET {{baseUrl}}/api/resumes/{{unanalysedResumeId}}/analysis
+
+### Another user's resume -> 404 RESUME_NOT_FOUND
+POST {{baseUrl}}/api/resumes/{{otherUsersResumeId}}/analyse
+
+### A resume whose text extraction failed -> 422 CONTENT_TEXT_MISSING
+POST {{baseUrl}}/api/resumes/{{noTextResumeId}}/analyse

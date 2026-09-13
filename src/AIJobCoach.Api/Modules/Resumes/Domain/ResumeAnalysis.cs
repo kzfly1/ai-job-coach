@@ -27,18 +27,19 @@ public sealed class ResumeAnalysis
 
         Id = Guid.NewGuid();
         ResumeId = resumeId;
-        Summary = summary;
-        YearsOfExperience = yearsOfExperience;
-        CareerLevel = careerLevel;
-        ProgrammingLanguages = string.IsNullOrWhiteSpace(programmingLanguages) ? "[]" : programmingLanguages;
-        Frameworks = string.IsNullOrWhiteSpace(frameworks) ? "[]" : frameworks;
-        CloudPlatforms = string.IsNullOrWhiteSpace(cloudPlatforms) ? "[]" : cloudPlatforms;
-        Databases = string.IsNullOrWhiteSpace(databases) ? "[]" : databases;
-        Tools = string.IsNullOrWhiteSpace(tools) ? "[]" : tools;
-        Projects = string.IsNullOrWhiteSpace(projects) ? "[]" : projects;
-        RawResponse = rawResponse;
-        AnalysedAt = DateTimeOffset.UtcNow;
         CreatedAt = DateTimeOffset.UtcNow;
+
+        Update(
+            summary,
+            yearsOfExperience,
+            careerLevel,
+            programmingLanguages,
+            frameworks,
+            cloudPlatforms,
+            databases,
+            tools,
+            projects,
+            rawResponse);
     }
     
     public Guid Id { get; private set; }
@@ -61,4 +62,39 @@ public sealed class ResumeAnalysis
     public DateTimeOffset CreatedAt { get; private set; }
     
     public Resume? Resume { get; private set; }
+
+    /// <summary>
+    /// Replaces the profile fields from a fresh analysis and stamps <see cref="AnalysedAt"/>.
+    /// Identity and <see cref="CreatedAt"/> are preserved so a re-analysis updates the
+    /// existing row rather than replacing it.
+    /// </summary>
+    public void Update(
+        string? summary,
+        int? yearsOfExperience,
+        string? careerLevel,
+        string programmingLanguages,
+        string frameworks,
+        string cloudPlatforms,
+        string databases,
+        string tools,
+        string projects,
+        string? rawResponse)
+    {
+        Summary = summary;
+        YearsOfExperience = yearsOfExperience;
+        CareerLevel = careerLevel;
+        ProgrammingLanguages = NormaliseCollection(programmingLanguages);
+        Frameworks = NormaliseCollection(frameworks);
+        CloudPlatforms = NormaliseCollection(cloudPlatforms);
+        Databases = NormaliseCollection(databases);
+        Tools = NormaliseCollection(tools);
+        Projects = NormaliseCollection(projects);
+        RawResponse = rawResponse;
+        AnalysedAt = DateTimeOffset.UtcNow;
+    }
+
+    private static string NormaliseCollection(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "[]" : value;
+    }
 }

@@ -19,11 +19,17 @@ public static class ResultMapper
             "INVALID_CREDENTIALS" =>
                 controller.StatusCode(StatusCodes.Status401Unauthorized, error),
 
-            "USER_NOT_FOUND" or "RESUME_NOT_FOUND" =>
+            "USER_NOT_FOUND" or "RESUME_NOT_FOUND" or "ANALYSIS_NOT_FOUND" =>
                 controller.NotFound(error),
 
-            "UNSUPPORTED_FILE_TYPE" or "FILE_TOO_LARGE" =>
+            "UNSUPPORTED_FILE_TYPE" or "FILE_TOO_LARGE" or "CONTENT_TEXT_MISSING" =>
                 controller.UnprocessableEntity(error),
+
+            "AI_PARSE_ERROR" =>
+                controller.StatusCode(StatusCodes.Status502BadGateway, error),
+
+            "AI_UNAVAILABLE" =>
+                controller.StatusCode(StatusCodes.Status503ServiceUnavailable, error),
 
             _ =>
                 controller.BadRequest(error)
