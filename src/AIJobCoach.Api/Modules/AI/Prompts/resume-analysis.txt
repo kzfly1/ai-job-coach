@@ -1,9 +1,6 @@
 You are an expert technical recruiter and resume analyst for software engineering roles.
 
-Analyse the following resume text and extract a structured Developer Profile.
-
-Resume text:
-{{resume_text}}
+Analyse the resume text provided in the user message and extract a structured Developer Profile.
 
 Return only a JSON object with this exact schema:
 {

@@ -1,6 +1,4 @@
-﻿using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using AIJobCoach.Api.Common.Http;
+﻿using AIJobCoach.Api.Common.Http;
 using AIJobCoach.Api.Modules.Resumes.Application;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -27,7 +25,7 @@ public sealed class ResumeController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetResumes(CancellationToken ct)
     {
-        if (!TryGetCurrentUserId(out var userId))
+        if (!this.TryGetUserId(out var userId))
         {
             return Unauthorized();
         }
@@ -46,7 +44,7 @@ public sealed class ResumeController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetResume(Guid id, CancellationToken ct)
     {
-        if (!TryGetCurrentUserId(out var userId))
+        if (!this.TryGetUserId(out var userId))
         {
             return Unauthorized();
         }
@@ -84,7 +82,7 @@ public sealed class ResumeController : ControllerBase
             });
         }
 
-        if (!TryGetCurrentUserId(out var userId))
+        if (!this.TryGetUserId(out var userId))
         {
             return Unauthorized();
         }
@@ -119,7 +117,7 @@ public sealed class ResumeController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteResume(Guid id, CancellationToken ct)
     {
-        if (!TryGetCurrentUserId(out var userId))
+        if (!this.TryGetUserId(out var userId))
         {
             return Unauthorized();
         }
@@ -132,19 +130,5 @@ public sealed class ResumeController : ControllerBase
         }
 
         return NoContent();
-    }
-
-    /// <summary>
-    /// Reads the authenticated user's id from JWT claims.
-    /// </summary>
-    /// <param name="userId">The parsed user id when the claim is present and valid.</param>
-    /// <returns>True if a valid user id claim was found; otherwise false.</returns>
-    private bool TryGetCurrentUserId(out Guid userId)
-    {
-        var userIdValue =
-            User.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub);
-
-        return Guid.TryParse(userIdValue, out userId);
     }
 }

@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using AIJobCoach.Api.Data;
 using AIJobCoach.Api.Middleware;
 using AIJobCoach.Api.Modules.AI.Application;
@@ -108,6 +108,7 @@ try
     builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
     builder.Services.AddScoped<IResumeTextExtractor, ResumeTextExtractor>();
     builder.Services.AddScoped<ResumeService>();
+    builder.Services.AddScoped<ResumeAnalysisService>();
 
     // AI module — OpenAI transport client.
     var openAiApiKey = builder.Configuration["OpenAI:ApiKey"];
